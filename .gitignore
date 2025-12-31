@@ -1,3 +1,23 @@
-# macOS system files
+
+
+# OS
 .DS_Store
-/idea.txt
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Python / caches
+__pycache__/
+*.pyc
+
+# virtual envs / env files
+venv/
+.env
+
+# build / logs / large
+build/
+dist/
+*.log
+
