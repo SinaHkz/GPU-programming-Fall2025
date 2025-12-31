@@ -1,8 +1,0 @@
-# config.yaml
-layout: list             # array | list
-alg: insertion           # insertion | bubble | merge
-type: double             # int | double
-file: input.txt
-verify: true             # true|false|yes|no|on|off|1|0
-output: output.txt       # file path to append
-write_output: true       # set to true to actually write the file
