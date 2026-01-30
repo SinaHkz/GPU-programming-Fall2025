@@ -5,6 +5,8 @@ This homework consists of **two CUDA programming problems** designed to strength
 
 The emphasis of this homework is not only on correctness, but also on **performance evaluation, optimization, and reasoning about GPU execution behavior**.
 
+You can upload your assignment using the following link: [Upload Form](https://forms.gle/iHP72xcaX1eab3sZ7)
+
 
 
 ## Problem 1 — Parallel Reduction and Memory Behavior
