@@ -1,41 +1,150 @@
 <!doctype html>
 <html>
   <head>
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem("theme");
+          if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+          else document.documentElement.setAttribute("data-theme", "dark");
+        } catch (e) {
+          document.documentElement.setAttribute("data-theme", "dark");
+        }
+      })();
+    </script>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>GPU Trainer Dashboard</title>
-    <style>
-      body { font-family: system-ui, sans-serif; margin: 20px; max-width: 980px; }
-      .row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-      .card { border: 1px solid #ddd; border-radius: 10px; padding: 12px; }
-      canvas { width: 100%; height: 260px; }
-      code { background: #f6f6f6; padding: 2px 6px; border-radius: 6px; }
-    </style>
+    <link rel="stylesheet" href="/vendor/uPlot.min.css" />
+    <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <h1>GPU Trainer Dashboard</h1>
-    <p>Serving metrics from <code id="runDir"></code></p>
-    <div class="row">
-      <div class="card">
-        <h3>Loss</h3>
-        <canvas id="loss"></canvas>
+    <div class="wrap">
+      <header>
+        <div class="title">
+          <h1>GPU Trainer Dashboard</h1>
+          <div class="sub">Live metrics + profiling CSVs from your runs folder</div>
+        </div>
+        <div class="topbar">
+          <div class="pill">
+            <label>Run</label>
+            <select id="runSelect"></select>
+          </div>
+          <div class="pill">
+            <span class="sub">runs</span>
+            <code id="runsRoot"></code>
+          </div>
+          <div class="pill">
+            <span class="sub">active</span>
+            <code id="runDir"></code>
+          </div>
+          <button id="themeToggle" class="btn-ghost">Toggle theme</button>
+        </div>
+      </header>
+
+      <details class="card" style="margin-bottom: 14px;">
+        <summary>Launch new run</summary>
+        <div class="launch">
+          <label>Exe <input id="cfgExe" placeholder="build/gpu_trainer.exe" /></label>
+          <label>Run name <input id="cfgRunName" placeholder="optional prefix" /></label>
+          <label>Arch
+            <select id="cfgArch">
+              <option value="lenet">lenet</option>
+              <option value="simple_cnn">simple_cnn</option>
+              <option value="mlp">mlp</option>
+            </select>
+          </label>
+          <label>Dataset
+            <select id="cfgDataset">
+              <option value="mnist">mnist</option>
+              <option value="cifar10">cifar10</option>
+              <option value="synthetic">synthetic</option>
+            </select>
+          </label>
+          <label>Epochs <input id="cfgEpochs" type="number" value="2" /></label>
+          <label>Batch <input id="cfgBatch" type="number" value="64" /></label>
+          <label>LR <input id="cfgLr" type="number" step="0.0001" value="0.01" /></label>
+          <label>Seed <input id="cfgSeed" type="number" value="1337" /></label>
+          <label>Profile interval (ms) <input id="cfgProfileInterval" type="number" value="200" /></label>
+          <label style="display:flex; align-items:center; gap:8px; margin-top: 24px;">
+            <input id="cfgNoShuffle" type="checkbox" /> No shuffle
+          </label>
+        </div>
+        <div class="launch-actions">
+          <button id="btnStart">Start</button>
+          <button id="btnStop" class="btn-ghost">Stop</button>
+          <span class="status" id="procStatus"></span>
+        </div>
+      </details>
+
+      <div class="meta" id="runInfo"></div>
+
+      <div class="grid" style="margin-top: 14px;">
+        <div class="card">
+          <h3>Loss</h3>
+          <div class="plot" id="lossPlot"></div>
+        </div>
+        <div class="card">
+          <h3>Accuracy</h3>
+          <div class="plot" id="accPlot"></div>
+        </div>
       </div>
-      <div class="card">
-        <h3>Accuracy</h3>
-        <canvas id="acc"></canvas>
+
+      <div class="grid" style="margin-top: 14px;">
+        <div class="card">
+          <h3>GPU Power (W)</h3>
+          <div class="plot" id="gpuPowerPlot"></div>
+        </div>
+        <div class="card">
+          <h3>Step Time (s)</h3>
+          <div class="plot" id="stepSPlot"></div>
+        </div>
       </div>
+
+      <div class="grid" style="margin-top: 14px;">
+        <div class="card">
+          <h3>GPU Utilization (%)</h3>
+          <div class="plot" id="gpuUtilPlot"></div>
+        </div>
+        <div class="card">
+          <h3>GPU Memory Used (MB)</h3>
+          <div class="plot" id="gpuMemUsedPlot"></div>
+        </div>
+      </div>
+
+      <div class="grid" style="margin-top: 14px;">
+        <div class="card">
+          <h3>Process CPU (%)</h3>
+          <div class="plot" id="procCpuPlot"></div>
+        </div>
+        <div class="card">
+          <h3>Process RSS (MB)</h3>
+          <div class="plot" id="procRssPlot"></div>
+        </div>
+      </div>
+
+      <div class="grid" style="margin-top: 14px;">
+        <div class="card">
+          <h3>Kernel Occupancy (achieved if available)</h3>
+          <label>Kernel <select id="kernelSelect"></select></label>
+          <div class="plot" id="occPlot"></div>
+        </div>
+        <div class="card">
+          <h3>Functions Summary</h3>
+          <label>Filter <input id="fnFilter" placeholder="conv2d, sgd, ..." /></label>
+          <div class="scroll" style="margin-top: 10px;">
+            <table>
+              <thead>
+                <tr><th>Kind</th><th>Name</th><th>Calls</th><th>Total ms</th><th>Avg ms</th><th>Max ms</th><th>Total MB</th><th>Avg GB/s</th></tr>
+              </thead>
+              <tbody id="fnTable"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <script src="/vendor/uPlot.iife.min.js"></script>
+      <script src="/app.js"></script>
     </div>
-    <div class="row" style="margin-top: 16px;">
-      <div class="card">
-        <h3>GPU Memory Free (MB)</h3>
-        <canvas id="memFree"></canvas>
-      </div>
-      <div class="card">
-        <h3>Step Time (s)</h3>
-        <canvas id="stepS"></canvas>
-      </div>
-    </div>
-    <script src="/app.js"></script>
   </body>
 </html>
-
