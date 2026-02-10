@@ -22,6 +22,7 @@ void print_help(const char* prog) {
                "  --log-every <int>\n"
                "  --eval-every <int>\n"
                "  --weight-decay <float>\n"
+               "  --profile-interval-ms <int> (0 disables)\n"
                "  --no-shuffle\n";
 }
 
@@ -67,6 +68,8 @@ TrainConfig parse_args(int argc, char** argv) {
       cfg.eval_every = std::stoi(need("--eval-every"));
     } else if (has_arg(a, "--weight-decay")) {
       cfg.weight_decay = std::stof(need("--weight-decay"));
+    } else if (has_arg(a, "--profile-interval-ms")) {
+      cfg.profile_interval_ms = std::stoi(need("--profile-interval-ms"));
     } else if (has_arg(a, "--no-shuffle")) {
       cfg.shuffle_train = false;
     } else {

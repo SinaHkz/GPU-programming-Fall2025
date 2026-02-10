@@ -25,6 +25,7 @@ add_executable(gpu_trainer
   src/core/logger.cu
   src/core/metrics.cu
   src/core/profiler.cu
+  src/core/system_monitor.cu
   src/datasets/mnist.cu
   src/datasets/cifar10.cu
   src/datasets/synthetic.cu
@@ -45,6 +46,12 @@ add_executable(gpu_trainer
 
 target_include_directories(gpu_trainer PRIVATE include)
 target_link_libraries(gpu_trainer PRIVATE CUDA::cudart)
+if (MSVC)
+  target_link_libraries(gpu_trainer PRIVATE psapi)
+endif()
+if (UNIX)
+  target_link_libraries(gpu_trainer PRIVATE dl)
+endif()
 
 target_compile_options(gpu_trainer PRIVATE
   $<$<COMPILE_LANGUAGE:CUDA>:--use_fast_math -lineinfo>

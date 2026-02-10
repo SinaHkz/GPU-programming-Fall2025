@@ -122,6 +122,8 @@ void conv2d_forward_nchw(const Tensor& x, const Tensor& w, const Tensor& b, cons
   const int total = n * out_c * out_h * out_w;
   const int threads = 256;
   const int blocks = (total + threads - 1) / threads;
+  Profiler::instance().record_kernel_launch("conv2d_fwd_kernel", (const void*)conv2d_fwd_kernel, dim3(blocks),
+                                            dim3(threads));
   conv2d_fwd_kernel<<<blocks, threads>>>(x.data(), w.data(), b.data(), y.data(), n, in_c, in_h, in_w, out_c, out_h,
                                         out_w, d.k_h, d.k_w, d.stride, d.pad);
   GPU_CUDA_CHECK(cudaGetLastError());
@@ -139,12 +141,16 @@ void conv2d_backward_nchw(const Tensor& x, const Tensor& w, const Conv2DDesc& d,
 
   {
     Profiler::ScopedGpuTimer t("conv2d_backward_gradb");
+    Profiler::instance().record_kernel_launch("conv2d_gradb_kernel", (const void*)conv2d_gradb_kernel,
+                                              dim3((out_c + 255) / 256), dim3(256));
     conv2d_gradb_kernel<<<(out_c + 255) / 256, 256>>>(grad_y.data(), grad_b.data(), n, out_c, out_h, out_w);
     GPU_CUDA_CHECK(cudaGetLastError());
   }
   {
     Profiler::ScopedGpuTimer t("conv2d_backward_gradw");
     const int total = out_c * in_c * d.k_h * d.k_w;
+    Profiler::instance().record_kernel_launch("conv2d_gradw_kernel", (const void*)conv2d_gradw_kernel,
+                                              dim3((total + 255) / 256), dim3(256));
     conv2d_gradw_kernel<<<(total + 255) / 256, 256>>>(x.data(), grad_y.data(), grad_w.data(), n, in_c, in_h, in_w,
                                                       out_c, out_h, out_w, d.k_h, d.k_w, d.stride, d.pad);
     GPU_CUDA_CHECK(cudaGetLastError());
@@ -152,6 +158,8 @@ void conv2d_backward_nchw(const Tensor& x, const Tensor& w, const Conv2DDesc& d,
   {
     Profiler::ScopedGpuTimer t("conv2d_backward_gradx");
     const int total = n * in_c * in_h * in_w;
+    Profiler::instance().record_kernel_launch("conv2d_gradx_kernel", (const void*)conv2d_gradx_kernel,
+                                              dim3((total + 255) / 256), dim3(256));
     conv2d_gradx_kernel<<<(total + 255) / 256, 256>>>(grad_y.data(), w.data(), grad_x.data(), n, in_c, in_h, in_w,
                                                       out_c, out_h, out_w, d.k_h, d.k_w, d.stride, d.pad);
     GPU_CUDA_CHECK(cudaGetLastError());

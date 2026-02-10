@@ -25,6 +25,10 @@ struct TrainConfig {
 
   bool shuffle_train{true};
   bool use_fp16{false};  // reserved
+
+  // Profiling
+  // 0 disables background system/GPU sampling.
+  int profile_interval_ms{200};
 };
 
 }  // namespace gpu

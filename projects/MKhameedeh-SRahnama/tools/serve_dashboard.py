@@ -1,9 +1,15 @@
 import argparse
+import csv
 import json
 import os
+import subprocess
+import sys
+import threading
+import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
+from urllib.parse import parse_qs
 
 
 def read_metrics_points(metrics_path: Path):
@@ -22,46 +28,331 @@ def read_metrics_points(metrics_path: Path):
     return points
 
 
+def _commonpath_ok(root: Path, child: Path) -> bool:
+    try:
+        root_s = str(root.resolve())
+        child_s = str(child.resolve())
+        return os.path.commonpath([root_s, child_s]) == root_s
+    except Exception:
+        return False
+
+
+def _resolve_run_dir(runs_root: Path, run_dir_str: str | None, default_run_dir: Path) -> Path:
+    if not run_dir_str:
+        return default_run_dir
+    run_dir = (runs_root / run_dir_str).resolve()
+    if not _commonpath_ok(runs_root, run_dir):
+        raise ValueError("run_dir outside runs_root")
+    return run_dir
+
+
+def _read_json(path: Path):
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8", errors="ignore"))
+    except Exception:
+        return None
+
+
+def _read_csv_rows(path: Path, tail: int = 2000):
+    if not path.exists():
+        return []
+    lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
+    if len(lines) > tail + 1:
+        lines = [lines[0]] + lines[-tail:]
+    if not lines:
+        return []
+    reader = csv.DictReader(lines)
+    rows = []
+    for r in reader:
+        rows.append(r)
+    return rows
+
+
+def _resolve_data_dir(data_dir: str) -> Path:
+    p = Path(data_dir)
+    if not p.is_absolute():
+        p = (Path(__file__).parent.parent / p).resolve()
+    return p
+
+
+def _ensure_dataset_ready(dataset: str, data_dir: str) -> None:
+    ds = (dataset or "").lower()
+    base = _resolve_data_dir(data_dir)
+    if ds == "mnist":
+        root = base / "mnist"
+        required = [
+            root / "train-images-idx3-ubyte",
+            root / "train-labels-idx1-ubyte",
+            root / "t10k-images-idx3-ubyte",
+            root / "t10k-labels-idx1-ubyte",
+        ]
+        if all(p.exists() for p in required):
+            return
+        cmd = [sys.executable, str(Path(__file__).parent / "download_mnist.py"), "--out", str(base)]
+    elif ds == "cifar10":
+        root = base / "cifar10" / "cifar-10-batches-bin"
+        if root.exists():
+            return
+        cmd = [sys.executable, str(Path(__file__).parent / "download_cifar10.py"), "--out", str(base)]
+    else:
+        return
+
+    subprocess.run(cmd, cwd=str(Path(__file__).parent.parent), check=True)
+
+
 class Handler(BaseHTTPRequestHandler):
-    run_dir: Path = None
+    runs_root: Path = None
+    default_run_dir: Path = None
     dash_dir: Path = None
+
+    proc_lock = threading.Lock()
+    proc: subprocess.Popen | None = None
+
+    def _send_json(self, payload, code=200):
+        body = json.dumps(payload).encode("utf-8")
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
     def do_GET(self):
         u = urlparse(self.path)
+        qs = parse_qs(u.query or "")
+        run_dir_q = (qs.get("run_dir") or [None])[0]
+
+        try:
+            run_dir = _resolve_run_dir(self.runs_root, run_dir_q, self.default_run_dir)
+        except Exception as e:
+            self._send_json({"error": str(e)}, code=400)
+            return
+
         if u.path == "/api/metrics":
-            metrics_path = self.run_dir / "metrics.jsonl"
+            metrics_path = run_dir / "metrics.jsonl"
             points = read_metrics_points(metrics_path)
-            body = json.dumps({"run_dir": str(self.run_dir), "points": points}).encode("utf-8")
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
+            self._send_json({"run_dir": str(run_dir), "points": points})
+            return
+
+        if u.path == "/api/runs":
+            out = []
+            if self.runs_root.exists():
+                for p in sorted(self.runs_root.iterdir(), key=lambda x: x.stat().st_mtime, reverse=True):
+                    if not p.is_dir():
+                        continue
+                    cfg = _read_json(p / "config.json")
+                    out.append(
+                        {
+                            "name": p.name,
+                            "run_dir": p.name,
+                            "mtime": p.stat().st_mtime,
+                            "arch": (cfg or {}).get("arch"),
+                            "dataset": (cfg or {}).get("dataset"),
+                        }
+                    )
+            self._send_json({"runs_root": str(self.runs_root), "runs": out})
+            return
+
+        if u.path == "/api/run_info":
+            self._send_json(
+                {
+                    "run_dir": str(run_dir),
+                    "config": _read_json(run_dir / "config.json"),
+                    "device": _read_json(run_dir / "device.json"),
+                    "has_profiling": (run_dir / "profiling").exists(),
+                }
+            )
+            return
+
+        if u.path == "/api/csv":
+            file_key = (qs.get("file") or [""])[0]
+            tail = int((qs.get("tail") or ["2000"])[0])
+            allowed = {
+                "train_metrics": Path("profiling/train_metrics.csv"),
+                "gpu_metrics": Path("profiling/gpu_metrics.csv"),
+                "system_metrics": Path("profiling/system_metrics.csv"),
+                "functions_events": Path("profiling/functions_events.csv"),
+                "functions_summary": Path("profiling/functions_summary.csv"),
+                "kernel_launches": Path("profiling/kernel_launches.csv"),
+                "kernel_metrics": Path("profiling/kernel_metrics.csv"),
+            }
+            rel = allowed.get(file_key)
+            if rel is None:
+                self._send_json({"error": "unknown file key"}, code=400)
+                return
+            rows = _read_csv_rows(run_dir / rel, tail=tail)
+            self._send_json({"run_dir": str(run_dir), "file": file_key, "rows": rows})
+            return
+
+        if u.path == "/api/proc_status":
+            with self.proc_lock:
+                p = self.proc
+                running = p is not None and p.poll() is None
+                pid = p.pid if p is not None else None
+            self._send_json({"running": running, "pid": pid})
             return
 
         if u.path == "/" or u.path == "/index.html":
             p = self.dash_dir / "index.html"
-        elif u.path == "/app.js":
-            p = self.dash_dir / "app.js"
         else:
-            self.send_response(404)
+            rel = u.path.lstrip("/")
+            p = (self.dash_dir / rel).resolve()
+            if not _commonpath_ok(self.dash_dir, p) or not p.exists() or not p.is_file():
+                self.send_response(404)
+                self.end_headers()
+                return
+
+        if p.suffix not in (".html", ".js", ".css", ".png", ".svg", ".ico", ".txt"):
+            self.send_response(415)
             self.end_headers()
             return
 
         data = p.read_bytes()
         self.send_response(200)
         if p.suffix == ".js":
-            self.send_header("Content-Type", "application/javascript")
+            self.send_header("Content-Type", "application/javascript; charset=utf-8")
+        elif p.suffix == ".css":
+            self.send_header("Content-Type", "text/css; charset=utf-8")
+        elif p.suffix == ".png":
+            self.send_header("Content-Type", "image/png")
+        elif p.suffix == ".svg":
+            self.send_header("Content-Type", "image/svg+xml")
+        elif p.suffix == ".ico":
+            self.send_header("Content-Type", "image/x-icon")
         else:
             self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
 
+    def do_POST(self):
+        u = urlparse(self.path)
+        if u.path not in ("/api/start", "/api/stop"):
+            self.send_response(404)
+            self.end_headers()
+            return
+
+        n = int(self.headers.get("Content-Length", "0") or "0")
+        body = self.rfile.read(n) if n > 0 else b"{}"
+        try:
+            payload = json.loads(body.decode("utf-8", errors="ignore") or "{}")
+        except Exception:
+            payload = {}
+
+        if u.path == "/api/stop":
+            with self.proc_lock:
+                p = self.proc
+                self.proc = None
+            if p is not None and p.poll() is None:
+                try:
+                    p.terminate()
+                except Exception:
+                    pass
+            self._send_json({"ok": True})
+            return
+
+        # /api/start
+        with self.proc_lock:
+            if self.proc is not None and self.proc.poll() is None:
+                self._send_json({"error": "process already running"}, code=409)
+                return
+
+        exe = payload.get("exe") or ""
+        if not exe:
+            # Default to build output.
+            exe = str((Path(__file__).parent.parent / "build" / ("gpu_trainer.exe" if os.name == "nt" else "gpu_trainer")).resolve())
+
+        arch = payload.get("arch") or "lenet"
+        dataset = payload.get("dataset") or "mnist"
+        epochs = int(payload.get("epochs") or 2)
+        batch = int(payload.get("batch") or payload.get("batch_size") or 64)
+        lr = float(payload.get("lr") or 0.01)
+        seed = int(payload.get("seed") or 1337)
+        data_dir = payload.get("data_dir") or "data"
+        run_name = payload.get("run_name") or ""
+        save_every = int(payload.get("save_every") or 0)
+        resume = payload.get("resume") or payload.get("resume_from") or ""
+        profile_interval_ms = int(payload.get("profile_interval_ms") or 200)
+        if "shuffle_train" in payload:
+            no_shuffle = not bool(payload.get("shuffle_train"))
+        else:
+            no_shuffle = bool(payload.get("no_shuffle") or False)
+
+        try:
+            _ensure_dataset_ready(dataset, data_dir)
+        except Exception as e:
+            self._send_json({"error": f"dataset download failed: {e}"}, code=500)
+            return
+
+        # Ensure runs land under the server's runs_root for monitoring.
+        out_dir = str(self.runs_root)
+
+        args = [
+            exe,
+            "--arch",
+            arch,
+            "--dataset",
+            dataset,
+            "--epochs",
+            str(epochs),
+            "--batch",
+            str(batch),
+            "--lr",
+            str(lr),
+            "--seed",
+            str(seed),
+            "--data-dir",
+            data_dir,
+            "--out-dir",
+            out_dir,
+            "--run-name",
+            run_name,
+            "--save-every",
+            str(save_every),
+            "--profile-interval-ms",
+            str(profile_interval_ms),
+        ]
+        if resume:
+            args += ["--resume", resume]
+        if no_shuffle:
+            args.append("--no-shuffle")
+
+        latest_txt = self.runs_root / "latest.txt"
+        prev_latest = latest_txt.read_text(encoding="utf-8", errors="ignore").strip() if latest_txt.exists() else ""
+
+        try:
+            p = subprocess.Popen(args, cwd=str(Path(__file__).parent.parent), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception as e:
+            self._send_json({"error": str(e), "args": args}, code=500)
+            return
+
+        with self.proc_lock:
+            self.proc = p
+
+        # Try to resolve the new run dir by watching latest.txt for a few seconds.
+        new_dir = ""
+        t0 = time.time()
+        while time.time() - t0 < 5.0:
+            if latest_txt.exists():
+                cur = latest_txt.read_text(encoding="utf-8", errors="ignore").strip()
+                if cur and cur != prev_latest and Path(cur).exists():
+                    new_dir = Path(cur).name
+                    break
+            time.sleep(0.1)
+
+        if new_dir:
+            try:
+                self.default_run_dir = (self.runs_root / new_dir).resolve()
+            except Exception:
+                pass
+
+        self._send_json({"ok": True, "pid": p.pid, "run_dir": new_dir})
+
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--run-dir", required=True, help="Run directory (e.g. runs/.... or runs/latest)")
+    ap.add_argument("--run-dir", default="runs/latest", help="Default run directory (e.g. runs/.... or runs/latest)")
     ap.add_argument("--port", type=int, default=8080)
     args = ap.parse_args()
 
@@ -71,20 +362,22 @@ def main():
         if latest_txt.exists():
             run_dir = Path(latest_txt.read_text(encoding="utf-8").strip())
     run_dir = run_dir.resolve()
+    runs_root = run_dir.parent.resolve()
+    runs_root.mkdir(parents=True, exist_ok=True)
 
     dash_dir = (Path(__file__).parent.parent / "dashboard").resolve()
     if not dash_dir.exists():
         raise SystemExit(f"Missing dashboard directory: {dash_dir}")
 
-    Handler.run_dir = run_dir
+    Handler.runs_root = runs_root
+    Handler.default_run_dir = run_dir
     Handler.dash_dir = dash_dir
 
     host = os.environ.get("HOST", "127.0.0.1")
     httpd = HTTPServer((host, args.port), Handler)
-    print(f"Dashboard: http://{host}:{args.port}  (run_dir={run_dir})")
+    print(f"Dashboard: http://{host}:{args.port}  (runs_root={runs_root}, default_run={run_dir.name})")
     httpd.serve_forever()
 
 
 if __name__ == "__main__":
     main()
-

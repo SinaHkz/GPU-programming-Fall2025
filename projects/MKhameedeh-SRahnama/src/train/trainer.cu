@@ -11,6 +11,7 @@
 #include "gpu/core/logger.h"
 #include "gpu/core/metrics.h"
 #include "gpu/core/profiler.h"
+#include "gpu/core/system_monitor.h"
 #include "gpu/core/tensor.h"
 #include "gpu/kernels/sgd.h"
 #include "gpu/kernels/softmax_ce.h"
@@ -57,6 +58,7 @@ static void write_config_json(const std::filesystem::path& dir, const TrainConfi
   out << "\"log_every\":" << cfg.log_every << ",";
   out << "\"eval_every\":" << cfg.eval_every << ",";
   out << "\"save_every\":" << cfg.save_every << ",";
+  out << "\"profile_interval_ms\":" << cfg.profile_interval_ms << ",";
   out << "\"shuffle_train\":" << (cfg.shuffle_train ? "true" : "false");
   out << "}\n";
 }
@@ -96,6 +98,11 @@ void Trainer::run() {
   MetricsSink metrics;
   metrics.set_run_dir(run_dir);
   Profiler::instance().set_run_dir(run_dir);
+
+  SystemMonitor monitor;
+  int dev = 0;
+  GPU_CUDA_CHECK(cudaGetDevice(&dev));
+  monitor.start(run_dir, cfg_.profile_interval_ms, dev);
 
   Logger::instance().info("Run dir: " + run_dir.string());
 
@@ -151,19 +158,38 @@ void Trainer::run() {
       const double step_start = steady_seconds();
 
       Tensor x_d({batch.n, batch.c, batch.h, batch.w}, "x");
-      x_d.copy_from_host(batch.x.data(), batch.x.size());
+      {
+        Profiler::ScopedCpuTimer t("step_h2d_copy");
+        x_d.copy_from_host(batch.x.data(), batch.x.size());
+      }
 
-      Tensor logits = model_->forward(x_d);
+      Tensor logits;
+      {
+        Profiler::ScopedCpuTimer t("step_forward");
+        logits = model_->forward(x_d);
+      }
+
       Tensor grad_logits({batch.n, batch.num_classes}, "grad_logits");
-
-      const float loss = softmax_cross_entropy_backward(logits, batch.y, grad_logits);
-      (void)model_->backward(grad_logits);
+      float loss = 0.0f;
+      {
+        Profiler::ScopedCpuTimer t("step_loss_backward");
+        loss = softmax_cross_entropy_backward(logits, batch.y, grad_logits);
+        (void)model_->backward(grad_logits);
+      }
 
       // SGD update.
-      for (auto p : model_->params()) sgd_step(*p.w, *p.grad, cfg_.lr, cfg_.weight_decay);
+      {
+        Profiler::ScopedCpuTimer t("step_sgd");
+        for (auto p : model_->params()) sgd_step(*p.w, *p.grad, cfg_.lr, cfg_.weight_decay);
+      }
 
-      const int correct = argmax_accuracy(logits, batch.y);
-      const float acc = static_cast<float>(correct) / static_cast<float>(batch.n);
+      int correct = 0;
+      float acc = 0.0f;
+      {
+        Profiler::ScopedCpuTimer t("step_accuracy");
+        correct = argmax_accuracy(logits, batch.y);
+        acc = static_cast<float>(correct) / static_cast<float>(batch.n);
+      }
 
       size_t free_b = 0;
       size_t total_b = 0;
@@ -210,11 +236,13 @@ void Trainer::run() {
 
       const uint64_t eval_every = (cfg_.eval_every <= 0) ? 0ULL : static_cast<uint64_t>(cfg_.eval_every);
       if (eval_every > 0 && global_step > 0 && (global_step % eval_every) == 0) {
+        Profiler::ScopedCpuTimer te("eval");
         run_eval(epoch, global_step);
       }
 
       if (cfg_.save_every > 0 && global_step > 0 &&
           (global_step % static_cast<uint64_t>(cfg_.save_every) == 0)) {
+        Profiler::ScopedCpuTimer ts("checkpoint_save");
         save_checkpoint(ckpt_dir, *model_, global_step);
       }
 
@@ -225,7 +253,10 @@ void Trainer::run() {
     Logger::instance().info("Epoch " + std::to_string(epoch) + " done: " + std::to_string(samples / epoch_s) +
                             " samples/s");
 
-    run_eval(epoch, global_step);
+    {
+      Profiler::ScopedCpuTimer te("eval_epoch_end");
+      run_eval(epoch, global_step);
+    }
   }
 
   Profiler::instance().flush();

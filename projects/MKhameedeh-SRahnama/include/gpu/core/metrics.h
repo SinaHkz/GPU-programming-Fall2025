@@ -21,7 +21,7 @@ class MetricsSink {
  private:
   std::mutex mu_;
   std::filesystem::path metrics_path_;
+  std::filesystem::path metrics_csv_path_;
 };
 
 }  // namespace gpu
-
