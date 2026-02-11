@@ -72,9 +72,11 @@ __global__ void softmax_ce_bwd_kernel(const float* logits, const int* labels, fl
     for (int c = 0; c < classes; ++c) s += expf(logits[sample * classes + c] - maxv);
     denom = s;
 
-    const int y = labels[sample];
-    const float p = expf(logits[sample * classes + y] - maxv) / denom;
-    loss[sample] = -logf(fmaxf(p, 1e-12f));
+    if (loss) {
+      const int y = labels[sample];
+      const float p = expf(logits[sample * classes + y] - maxv) / denom;
+      loss[sample] = -logf(fmaxf(p, 1e-12f));
+    }
   }
   __syncthreads();
 
@@ -102,20 +104,22 @@ __global__ void argmax_acc_kernel(const float* logits, const int* labels, int* c
   correct[i] = (best == labels[i]) ? 1 : 0;
 }
 
-float softmax_cross_entropy_backward(const Tensor& logits, const std::vector<int>& labels, Tensor& grad_logits) {
+float softmax_cross_entropy_backward(const Tensor& logits, const std::vector<int>& labels, Tensor& grad_logits,
+                                     bool compute_loss) {
   Profiler::ScopedGpuTimer t("softmax_cross_entropy_backward");
   const int n = logits.dim(0);
   const int classes = logits.dim(1);
   if (static_cast<int>(labels.size()) != n) return 0.0f;
 
   int* d_labels = tmp().ensure_labels(n);
-  float* d_loss = tmp().ensure_loss(n);
+  float* d_loss = compute_loss ? tmp().ensure_loss(n) : nullptr;
   GPU_CUDA_CHECK(cudaMemcpy(d_labels, labels.data(), n * sizeof(int), cudaMemcpyHostToDevice));
 
   const int threads = 256;
-  GPU_CUDA_CHECK(cudaMemset(d_loss, 0, n * sizeof(float)));
+  if (compute_loss) GPU_CUDA_CHECK(cudaMemset(d_loss, 0, n * sizeof(float)));
   softmax_ce_bwd_kernel<<<n, threads>>>(logits.data(), d_labels, grad_logits.data(), d_loss, n, classes);
   GPU_CUDA_CHECK(cudaGetLastError());
+  if (!compute_loss) return 0.0f;
 
   std::vector<float> host_loss(static_cast<size_t>(n));
   GPU_CUDA_CHECK(cudaMemcpy(host_loss.data(), d_loss, n * sizeof(float), cudaMemcpyDeviceToHost));

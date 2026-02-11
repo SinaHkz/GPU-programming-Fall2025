@@ -35,7 +35,7 @@ Conv2D::Conv2D(int in_c, int out_c, int k, int stride, int pad, int seed, const 
 }
 
 Tensor Conv2D::forward(const Tensor& x) {
-  x_cache_ = Tensor(x.shape(), name_ + ".x_cache");
+  x_cache_.resize(x.shape());
   GPU_CUDA_CHECK(cudaMemcpy(x_cache_.data(), x.data(), x.bytes(), cudaMemcpyDeviceToDevice));
 
   const int n = x.dim(0);
@@ -67,7 +67,7 @@ std::vector<Param> Conv2D::params() const {
 
 // ---- ReLU ----
 Tensor ReLU::forward(const Tensor& x) {
-  x_cache_ = Tensor(x.shape(), name_ + ".x_cache");
+  x_cache_.resize(x.shape());
   GPU_CUDA_CHECK(cudaMemcpy(x_cache_.data(), x.data(), x.bytes(), cudaMemcpyDeviceToDevice));
   Tensor y(x.shape(), name_ + ".y");
   relu_forward(x, y);
@@ -84,7 +84,7 @@ Tensor ReLU::backward(const Tensor& grad_out) {
 MaxPool2D::MaxPool2D(int k, int stride, const std::string& name) : name_(name), d_{k, stride} {}
 
 Tensor MaxPool2D::forward(const Tensor& x) {
-  x_cache_ = Tensor(x.shape(), name_ + ".x_cache");
+  x_cache_.resize(x.shape());
   GPU_CUDA_CHECK(cudaMemcpy(x_cache_.data(), x.data(), x.bytes(), cudaMemcpyDeviceToDevice));
 
   const int n = x.dim(0);
@@ -139,7 +139,7 @@ Linear::Linear(int in_features, int out_features, int seed, const std::string& n
 }
 
 Tensor Linear::forward(const Tensor& x) {
-  x_cache_ = Tensor(x.shape(), name_ + ".x_cache");
+  x_cache_.resize(x.shape());
   GPU_CUDA_CHECK(cudaMemcpy(x_cache_.data(), x.data(), x.bytes(), cudaMemcpyDeviceToDevice));
   Tensor y({x.dim(0), out_}, name_ + ".y");
   linear_forward(x, w_, b_, y);

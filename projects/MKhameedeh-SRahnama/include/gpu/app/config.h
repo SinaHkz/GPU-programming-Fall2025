@@ -22,9 +22,22 @@ struct TrainConfig {
   int log_every{50};
   int eval_every{200};
   int save_every{0};  // steps (0 disables)
+  int max_steps{0};   // 0 disables step cap
 
   bool shuffle_train{true};
   bool use_fp16{false};  // reserved
+
+  // Performance toggles.
+  bool enable_h2d_pipeline{true};
+  bool enable_log_sync_optimizations{true};
+  bool enable_async_checkpoint{true};
+  bool enable_cuda_graph_sgd{false};
+  bool enable_async_eval{false};
+  int norm_log_multiplier{5};  // compute norms every (log_every * multiplier)
+
+  // Runs baseline+optimized back-to-back and prints speedup.
+  bool benchmark_compare{false};
+  int benchmark_steps{200};
 };
 
 }  // namespace gpu

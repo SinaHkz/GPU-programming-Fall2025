@@ -2,6 +2,11 @@ SHELL := bash
 
 NVCC ?= nvcc
 CXX ?= g++
+PYTHON ?= $(shell command -v python3 2>/dev/null || command -v python 2>/dev/null)
+
+ifeq ($(strip $(PYTHON)),)
+$(error Python interpreter not found. Install python3 or run with PYTHON=/path/to/python)
+endif
 
 # Build for the local GPU by default (override with `make CUDA_ARCH=-arch=sm_XX` if needed).
 CUDA_ARCH ?= -arch=native
@@ -75,10 +80,10 @@ clean:
 
 # ---- Data ----
 data-mnist:
-	python tools/download_mnist.py --out data
+	$(PYTHON) tools/download_mnist.py --out data
 
 data-cifar10:
-	python tools/download_cifar10.py --out data/cifar10
+	$(PYTHON) tools/download_cifar10.py --out data/cifar10
 
 # ---- Runs ----
 ARCH ?= lenet
@@ -101,4 +106,4 @@ run-synth: build
 	$(BIN) --arch $(ARCH) --dataset synthetic --epochs 1 --batch $(BATCH) --lr $(LR) --seed $(SEED) --out-dir $(OUT_DIR) --run-name "$(RUN_NAME)" --save-every $(SAVE_EVERY)
 
 dashboard:
-	python tools/serve_dashboard.py --run-dir $(OUT_DIR)/latest --port 8080
+	$(PYTHON) tools/serve_dashboard.py --run-dir $(OUT_DIR)/latest --port 8080
