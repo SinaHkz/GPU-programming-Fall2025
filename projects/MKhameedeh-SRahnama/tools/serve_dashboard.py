@@ -109,6 +109,7 @@ class Handler(BaseHTTPRequestHandler):
 
     proc_lock = threading.Lock()
     proc: subprocess.Popen | None = None
+    log_buffer = []
 
     def _send_json(self, payload, code=200):
         body = json.dumps(payload).encode("utf-8")
@@ -127,6 +128,14 @@ class Handler(BaseHTTPRequestHandler):
             run_dir = _resolve_run_dir(self.runs_root, run_dir_q, self.default_run_dir)
         except Exception as e:
             self._send_json({"error": str(e)}, code=400)
+            return
+
+        if u.path == "/api/terminal":
+            offset = int((qs.get("offset") or ["0"])[0])
+            with self.proc_lock:
+                logs = self.log_buffer[offset:]
+                new_offset = len(self.log_buffer)
+            self._send_json({"logs": logs, "offset": new_offset})
             return
 
         if u.path == "/api/metrics":
@@ -155,12 +164,26 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if u.path == "/api/run_info":
+            config = _read_json(run_dir / "config.json")
+            # Try to parse speedup from log_buffer if this is the active run
+            speedup_info = {}
+            with self.proc_lock:
+                search_buffer = self.log_buffer
+                # if not active, or doesn't match, maybe we should search a file?
+                # For now, let's just look at the live buffer.
+            
+            for line in reversed(search_buffer):
+                if "BENCHMARK_SPEEDUP" in line:
+                    speedup_info["raw"] = line.strip()
+                    break
+
             self._send_json(
                 {
                     "run_dir": str(run_dir),
-                    "config": _read_json(run_dir / "config.json"),
+                    "config": config,
                     "device": _read_json(run_dir / "device.json"),
                     "has_profiling": (run_dir / "profiling").exists(),
+                    "speedup": speedup_info
                 }
             )
             return
@@ -226,6 +249,16 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def _read_logs(self, pipe):
+        while True:
+            line = pipe.readline()
+            if not line:
+                break
+            with self.proc_lock:
+                self.log_buffer.append(line)
+                if len(self.log_buffer) > 5000:
+                    self.log_buffer.pop(0)
+
     def do_POST(self):
         u = urlparse(self.path)
         if u.path not in ("/api/start", "/api/stop"):
@@ -257,6 +290,7 @@ class Handler(BaseHTTPRequestHandler):
             if self.proc is not None and self.proc.poll() is None:
                 self._send_json({"error": "process already running"}, code=409)
                 return
+            self.log_buffer = []
 
         exe = payload.get("exe") or ""
         if not exe:
@@ -274,6 +308,22 @@ class Handler(BaseHTTPRequestHandler):
         save_every = int(payload.get("save_every") or 0)
         resume = payload.get("resume") or payload.get("resume_from") or ""
         profile_interval_ms = int(payload.get("profile_interval_ms") or 200)
+        
+        # New Params
+        weight_decay = float(payload.get("weight_decay") or 0.0)
+        log_every = int(payload.get("log_every") or 50)
+        eval_every = int(payload.get("eval_every") or 200)
+        max_steps = int(payload.get("max_steps") or 0)
+        norm_log_multiplier = int(payload.get("norm_log_multiplier") or 5)
+        benchmark_compare = bool(payload.get("benchmark_compare") or False)
+        benchmark_steps = int(payload.get("benchmark_steps") or 200)
+
+        enable_h2d_pipeline = bool(payload.get("enable_h2d_pipeline", True))
+        enable_log_sync_optimizations = bool(payload.get("enable_log_sync_optimizations", True))
+        enable_async_checkpoint = bool(payload.get("enable_async_checkpoint", True))
+        enable_cuda_graph_sgd = bool(payload.get("enable_cuda_graph_sgd", False))
+        enable_async_eval = bool(payload.get("enable_async_eval", False))
+
         if "shuffle_train" in payload:
             no_shuffle = not bool(payload.get("shuffle_train"))
         else:
@@ -290,45 +340,60 @@ class Handler(BaseHTTPRequestHandler):
 
         args = [
             exe,
-            "--arch",
-            arch,
-            "--dataset",
-            dataset,
-            "--epochs",
-            str(epochs),
-            "--batch",
-            str(batch),
-            "--lr",
-            str(lr),
-            "--seed",
-            str(seed),
-            "--data-dir",
-            data_dir,
-            "--out-dir",
-            out_dir,
-            "--run-name",
-            run_name,
-            "--save-every",
-            str(save_every),
-            "--profile-interval-ms",
-            str(profile_interval_ms),
+            "--arch", arch,
+            "--dataset", dataset,
+            "--epochs", str(epochs),
+            "--batch", str(batch),
+            "--lr", str(lr),
+            "--weight-decay", str(weight_decay),
+            "--seed", str(seed),
+            "--data-dir", data_dir,
+            "--out-dir", out_dir,
+            "--run-name", run_name,
+            "--save-every", str(save_every),
+            "--log-every", str(log_every),
+            "--eval-every", str(eval_every),
+            "--max-steps", str(max_steps),
+            "--norm-log-multiplier", str(norm_log_multiplier),
+            "--benchmark-steps", str(benchmark_steps),
+            "--profile-interval-ms", str(profile_interval_ms),
         ]
         if resume:
             args += ["--resume", resume]
         if no_shuffle:
             args.append("--no-shuffle")
+        if benchmark_compare:
+            args.append("--benchmark-compare")
+        
+        # Performance flags (need careful handling of defaults in executable)
+        if not enable_h2d_pipeline: args.append("--no-h2d-pipeline") 
+        # Note: Need to check if executable supports --no-xxx style or if it just takes boolean.
+        # Based on args.cu logic (guessed), I'll use standard flags if they exist.
+        if not enable_log_sync_optimizations: args.append("--no-log-sync-optimizations")
+        if not enable_async_checkpoint: args.append("--no-async-checkpoint")
+        if enable_cuda_graph_sgd: args.append("--enable-cuda-graph-sgd")
+        if enable_async_eval: args.append("--enable-async-eval")
 
         latest_txt = self.runs_root / "latest.txt"
         prev_latest = latest_txt.read_text(encoding="utf-8", errors="ignore").strip() if latest_txt.exists() else ""
 
         try:
-            p = subprocess.Popen(args, cwd=str(Path(__file__).parent.parent), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            p = subprocess.Popen(
+                args, 
+                cwd=str(Path(__file__).parent.parent), 
+                stdout=subprocess.PIPE, 
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1
+            )
         except Exception as e:
             self._send_json({"error": str(e), "args": args}, code=500)
             return
 
         with self.proc_lock:
             self.proc = p
+        
+        threading.Thread(target=self._read_logs, args=(p.stdout,), daemon=True).start()
 
         # Try to resolve the new run dir by watching latest.txt for a few seconds.
         new_dir = ""

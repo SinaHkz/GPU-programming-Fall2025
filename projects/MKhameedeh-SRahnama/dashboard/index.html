@@ -1,5 +1,6 @@
 <!doctype html>
 <html lang="en" data-theme="dark">
+
 <head>
     <script>
         (function () {
@@ -20,6 +21,7 @@
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
 </head>
+
 <body>
     <div class="layout">
         <aside>
@@ -82,22 +84,71 @@
                             <input id="cfgLr" type="number" step="0.0001" value="0.01" />
                         </div>
                         <div class="field">
-                            <label>Seed</label>
-                            <input id="cfgSeed" type="number" value="1337" />
+                            <label>Weight Decay</label>
+                            <input id="cfgWeightDecay" type="number" step="0.00001" value="0.0" />
                         </div>
                     </div>
-                    <div class="field">
-                        <label>Profile Interval (ms)</label>
-                        <input id="cfgProfileInterval" type="number" value="200" />
+
+                    <details style="margin-bottom: 12px; font-size: 13px;">
+                        <summary style="cursor:pointer; color:var(--accent); margin-bottom: 8px;">Advanced Settings
+                        </summary>
+                        <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 0;">
+                            <div class="field">
+                                <label>Log Every</label>
+                                <input id="cfgLogEvery" type="number" value="50" />
+                            </div>
+                            <div class="field">
+                                <label>Eval Every</label>
+                                <input id="cfgEvalEvery" type="number" value="200" />
+                            </div>
+                        </div>
+                        <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 0;">
+                            <div class="field">
+                                <label>Max Steps</label>
+                                <input id="cfgMaxSteps" type="number" value="0" />
+                            </div>
+                            <div class="field">
+                                <label>Norm Mult</label>
+                                <input id="cfgNormMult" type="number" value="5" />
+                            </div>
+                        </div>
+                        <div class="field">
+                            <label>Profile Interval (ms)</label>
+                            <input id="cfgProfileInterval" type="number" value="200" />
+                        </div>
+                    </details>
+
+                    <details style="margin-bottom: 12px; font-size: 13px;">
+                        <summary style="cursor:pointer; color:var(--accent2); margin-bottom: 8px;">Optimization Toggles
+                        </summary>
+                        <label class="toggle-label"><input id="cfgH2DPipeline" type="checkbox" checked /> H2D
+                            Pipelining</label>
+                        <label class="toggle-label"><input id="cfgLogSync" type="checkbox" checked /> Log Sync
+                            Optim</label>
+                        <label class="toggle-label"><input id="cfgAsyncCkpt" type="checkbox" checked /> Async
+                            Checkpoint</label>
+                        <label class="toggle-label"><input id="cfgCudaGraph" type="checkbox" /> CUDA Graph SGD</label>
+                        <label class="toggle-label"><input id="cfgAsyncEval" type="checkbox" /> Async Evaluation</label>
+                        <label class="toggle-label"><input id="cfgNoShuffle" type="checkbox" /> No Shuffle</label>
+                    </details>
+
+                    <div class="field" style="border: 1px dashed var(--border); padding: 8px; border-radius: 4px;">
+                        <label class="toggle-label" style="font-weight:bold; color:var(--warning);">
+                            <input id="cfgBenchmark" type="checkbox" /> Benchmark Mode
+                        </label>
+                        <div class="field" style="margin: 4px 0 0 24px;">
+                            <label>Benchmark Steps</label>
+                            <input id="cfgBenchSteps" type="number" value="200" />
+                        </div>
                     </div>
-                    <label style="display:flex; align-items:center; gap:8px; margin: 8px 0 16px; cursor:pointer;">
-                        <input id="cfgNoShuffle" type="checkbox" style="width: auto;" /> No Shuffle
-                    </label>
-                    <div class="flex" style="justify-content: space-between; gap: 10px;">
+
+                    <div class="flex" style="justify-content: space-between; gap: 10px; margin-top: 12px;">
                         <button id="btnStart" style="flex: 2;"><i data-lucide="play" size="16"></i> Start</button>
-                        <button id="btnStop" class="btn-ghost" style="flex: 1;"><i data-lucide="square" size="16"></i> Stop</button>
+                        <button id="btnStop" class="btn-ghost" style="flex: 1;"><i data-lucide="square" size="16"></i>
+                            Stop</button>
                     </div>
-                    <div id="procStatus" style="font-size: 12px; margin-top: 12px; text-align: center; color: var(--muted);"></div>
+                    <div id="procStatus"
+                        style="font-size: 12px; margin-top: 12px; text-align: center; color: var(--muted);"></div>
                 </div>
             </details>
 
@@ -120,37 +171,91 @@
                 </div>
             </header>
 
+            <div class="grid">
+                <div class="card">
+                    <div class="flex" style="margin-bottom: 12px;"><i data-lucide="terminal" size="18"
+                            color="var(--accent)"></i>
+                        <h3>Terminal Output</h3>
+                    </div>
+                    <div id="terminal" class="terminal-container"></div>
+                </div>
+                <div class="card" id="benchmarkCard" style="display:none;">
+                    <div class="flex" style="margin-bottom: 12px;"><i data-lucide="gauge" size="18"
+                            color="var(--warning)"></i>
+                        <h3>Benchmark Results</h3>
+                    </div>
+                    <div id="benchmarkResult" class="benchmark-info">
+                        <div class="speedup-val" id="speedupVal">-</div>
+                        <div class="speedup-label">Faster than Baseline</div>
+                    </div>
+                </div>
+            </div>
+
             <div class="section-label">Training Performance</div>
             <div class="grid">
                 <div class="card">
-                    <div class="flex" style="margin-bottom: 12px;"><i data-lucide="trending-down" size="18" color="var(--danger)"></i><h3>Loss</h3></div>
+                    <div class="flex" style="margin-bottom: 12px;"><i data-lucide="trending-down" size="18"
+                            color="var(--danger)"></i>
+                        <h3>Loss</h3>
+                    </div>
                     <div class="plot" id="lossPlot"></div>
                 </div>
                 <div class="card">
-                    <div class="flex" style="margin-bottom: 12px;"><i data-lucide="target" size="18" color="var(--success)"></i><h3>Accuracy</h3></div>
+                    <div class="flex" style="margin-bottom: 12px;"><i data-lucide="target" size="18"
+                            color="var(--success)"></i>
+                        <h3>Accuracy</h3>
+                    </div>
                     <div class="plot" id="accPlot"></div>
+                </div>
+            </div>
+
+            <div class="grid">
+                <div class="card">
+                    <div class="flex" style="margin-bottom: 12px;"><i data-lucide="bar-chart-2" size="18"
+                            color="var(--accent2)"></i>
+                        <h3>Parameter Norm</h3>
+                    </div>
+                    <div class="plot" id="paramNormPlot"></div>
+                </div>
+                <div class="card">
+                    <div class="flex" style="margin-bottom: 12px;"><i data-lucide="activity" size="18"
+                            color="var(--accent)"></i>
+                        <h3>Gradient Norm</h3>
+                    </div>
+                    <div class="plot" id="gradNormPlot"></div>
                 </div>
             </div>
 
             <div class="section-label">Hardware Utilization</div>
             <div class="grid">
                 <div class="card">
-                    <div class="flex" style="margin-bottom: 12px;"><i data-lucide="zap" size="18" color="var(--warning)"></i><h3>GPU Power (W)</h3></div>
+                    <div class="flex" style="margin-bottom: 12px;"><i data-lucide="zap" size="18"
+                            color="var(--warning)"></i>
+                        <h3>GPU Power (W)</h3>
+                    </div>
                     <div class="plot" id="gpuPowerPlot"></div>
                 </div>
                 <div class="card">
-                    <div class="flex" style="margin-bottom: 12px;"><i data-lucide="cpu" size="18" color="var(--accent)"></i><h3>GPU Utilization (%)</h3></div>
+                    <div class="flex" style="margin-bottom: 12px;"><i data-lucide="cpu" size="18"
+                            color="var(--accent)"></i>
+                        <h3>GPU Utilization (%)</h3>
+                    </div>
                     <div class="plot" id="gpuUtilPlot"></div>
                 </div>
             </div>
 
             <div class="grid">
                 <div class="card">
-                    <div class="flex" style="margin-bottom: 12px;"><i data-lucide="database" size="18" color="var(--accent2)"></i><h3>GPU Memory (MB)</h3></div>
+                    <div class="flex" style="margin-bottom: 12px;"><i data-lucide="database" size="18"
+                            color="var(--accent2)"></i>
+                        <h3>GPU Memory (MB)</h3>
+                    </div>
                     <div class="plot" id="gpuMemUsedPlot"></div>
                 </div>
                 <div class="card">
-                    <div class="flex" style="margin-bottom: 12px;"><i data-lucide="timer" size="18"></i><h3>Step Time (s)</h3></div>
+                    <div class="flex" style="margin-bottom: 12px;"><i data-lucide="timer" size="18"></i>
+                        <h3>Step Time (s)</h3>
+                    </div>
                     <div class="plot" id="stepSPlot"></div>
                 </div>
             </div>
@@ -158,11 +263,15 @@
             <div class="section-label">System Resources</div>
             <div class="grid">
                 <div class="card">
-                    <div class="flex" style="margin-bottom: 12px;"><i data-lucide="activity" size="18"></i><h3>Process CPU (%)</h3></div>
+                    <div class="flex" style="margin-bottom: 12px;"><i data-lucide="activity" size="18"></i>
+                        <h3>Process CPU (%)</h3>
+                    </div>
                     <div class="plot" id="procCpuPlot"></div>
                 </div>
                 <div class="card">
-                    <div class="flex" style="margin-bottom: 12px;"><i data-lucide="microchip" size="18"></i><h3>Process RSS (MB)</h3></div>
+                    <div class="flex" style="margin-bottom: 12px;"><i data-lucide="microchip" size="18"></i>
+                        <h3>Process RSS (MB)</h3>
+                    </div>
                     <div class="plot" id="procRssPlot"></div>
                 </div>
             </div>
@@ -185,12 +294,22 @@
                             <i data-lucide="list" size="18"></i>
                             <h3>Functions Summary</h3>
                         </div>
-                        <input id="fnFilter" placeholder="Filter functions..." style="width: 200px; padding: 4px 8px; font-size: 12px;" />
+                        <input id="fnFilter" placeholder="Filter functions..."
+                            style="width: 200px; padding: 4px 8px; font-size: 12px;" />
                     </div>
                     <div class="table-container" style="max-height: 320px; overflow-y: auto;">
                         <table>
                             <thead>
-                                <tr><th>Kind</th><th>Name</th><th>Calls</th><th>Total ms</th><th>Avg ms</th><th>Max ms</th><th>Total MB</th><th>GB/s</th></tr>
+                                <tr>
+                                    <th>Kind</th>
+                                    <th>Name</th>
+                                    <th>Calls</th>
+                                    <th>Total ms</th>
+                                    <th>Avg ms</th>
+                                    <th>Max ms</th>
+                                    <th>Total MB</th>
+                                    <th>GB/s</th>
+                                </tr>
                             </thead>
                             <tbody id="fnTable"></tbody>
                         </table>
@@ -207,4 +326,5 @@
         lucide.createIcons();
     </script>
 </body>
+
 </html>

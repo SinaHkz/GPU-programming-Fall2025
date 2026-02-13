@@ -75,7 +75,7 @@ function fmtNum(x, digits = 3) {
 }
 
 function getStyle(prop) {
-    return getComputedStyle(document.documentElement).getPropertyValue(prop).trim();
+  return getComputedStyle(document.documentElement).getPropertyValue(prop).trim();
 }
 
 function plotLine(divId, title, xs, ys, xTitle, yTitle) {
@@ -89,7 +89,7 @@ function plotLine(divId, title, xs, ys, xTitle, yTitle) {
   if (!div.__uplot) {
     const theme = document.documentElement.getAttribute("data-theme") || "dark";
     const isLight = theme === "light";
-    
+
     // Use CSS variables for chart colors
     const axisColor = getStyle('--muted') || (isLight ? "rgba(17,24,39,.55)" : "rgba(232,236,255,.55)");
     const gridColor = getStyle('--border') || (isLight ? "rgba(17,24,39,.10)" : "rgba(232,236,255,.10)");
@@ -104,8 +104,8 @@ function plotLine(divId, title, xs, ys, xTitle, yTitle) {
       cursor: { drag: { x: true, y: false } },
       scales: { x: { time: false }, y: { auto: true } },
       axes: [
-        { stroke: axisColor, grid: { stroke: gridColor }, label: xTitle, font: "12px Inter", labelFont: "12px Inter", ticks: {stroke: axisColor} },
-        { stroke: axisColor, grid: { stroke: gridColor }, label: yTitle, font: "12px Inter", labelFont: "12px Inter", ticks: {stroke: axisColor} },
+        { stroke: axisColor, grid: { stroke: gridColor }, label: xTitle, font: "12px Inter", labelFont: "12px Inter", ticks: { stroke: axisColor } },
+        { stroke: axisColor, grid: { stroke: gridColor }, label: yTitle, font: "12px Inter", labelFont: "12px Inter", ticks: { stroke: axisColor } },
       ],
       series: [
         { label: xTitle },
@@ -134,7 +134,7 @@ function applyTheme(theme) {
   document.documentElement.setAttribute("data-theme", theme);
   try {
     localStorage.setItem("theme", theme);
-  } catch {}
+  } catch { }
 }
 
 function initTheme() {
@@ -142,7 +142,7 @@ function initTheme() {
   try {
     const saved = localStorage.getItem("theme");
     if (saved === "light" || saved === "dark") theme = saved;
-  } catch {}
+  } catch { }
   applyTheme(theme);
   const btn = document.getElementById("themeToggle");
   if (btn) {
@@ -150,11 +150,11 @@ function initTheme() {
       const cur = document.documentElement.getAttribute("data-theme") || "dark";
       applyTheme(cur === "dark" ? "light" : "dark");
       // Force rebuild plots with new theme colors.
-      for (const id of ["lossPlot","accPlot","stepSPlot","gpuPowerPlot","gpuUtilPlot","gpuMemUsedPlot","procCpuPlot","procRssPlot","occPlot"]) {
+      for (const id of ["lossPlot", "accPlot", "stepSPlot", "gpuPowerPlot", "gpuUtilPlot", "gpuMemUsedPlot", "procCpuPlot", "procRssPlot", "occPlot", "paramNormPlot", "gradNormPlot"]) {
         const el = document.getElementById(id);
         if (el && el.__uplot) {
-          try { el.__ro && el.__ro.disconnect(); } catch {}
-          try { el.__uplot.destroy(); } catch {}
+          try { el.__ro && el.__ro.disconnect(); } catch { }
+          try { el.__uplot.destroy(); } catch { }
           el.__uplot = null;
           el.__ro = null;
         }
@@ -200,7 +200,30 @@ const state = {
   runDir: "",
   kernelName: "",
   fnFilter: "",
+  terminalOffset: 0,
 };
+
+async function updateTerminal() {
+  const terminal = document.getElementById("terminal");
+  if (!terminal) return;
+  try {
+    const data = await fetchJSON(`/api/terminal?offset=${state.terminalOffset}`);
+    if (data.logs && data.logs.length > 0) {
+      const atBottom = terminal.scrollHeight - terminal.scrollTop <= terminal.clientHeight + 50;
+      for (const line of data.logs) {
+        const span = document.createElement("span");
+        span.textContent = line;
+        terminal.appendChild(span);
+      }
+      state.terminalOffset = data.offset;
+      if (atBottom) {
+        terminal.scrollTop = terminal.scrollHeight;
+      }
+    }
+  } catch (e) {
+    console.error("Terminal fetch failed", e);
+  }
+}
 
 async function loadRuns() {
   const data = await fetchJSON("/api/runs");
@@ -222,36 +245,57 @@ async function loadRunInfo() {
   document.getElementById("runDir").textContent = info.run_dir;
   const cfg = info.config || {};
   const dev = info.device || {};
-  
+
   const tags = [
-    {label: 'arch', val: cfg.arch},
-    {label: 'dataset', val: cfg.dataset},
-    {label: 'batch', val: cfg.batch_size},
-    {label: 'lr', val: cfg.lr},
-    {label: 'device', val: dev.name},
-    {label: 'sm', val: dev.sm_count}
+    { label: 'arch', val: cfg.arch },
+    { label: 'dataset', val: cfg.dataset },
+    { label: 'batch', val: cfg.batch_size },
+    { label: 'lr', val: cfg.lr },
+    { label: 'device', val: dev.name },
+    { label: 'sm', val: dev.sm_count }
   ];
 
   const html = tags.filter(t => t.val !== undefined && t.val !== null)
     .map(t => `<div class="badge">${t.label}: <strong>${t.val}</strong></div>`)
     .join('');
-    
+
   document.getElementById("runInfo").innerHTML = html;
+
+  // Handle speedup
+  const benchCard = document.getElementById("benchmarkCard");
+  if (info.speedup && info.speedup.raw) {
+    benchCard.style.display = "block";
+    const match = info.speedup.raw.match(/\((.*)\% faster\)/);
+    if (match) {
+      document.getElementById("speedupVal").textContent = match[1] + "%";
+    } else {
+      document.getElementById("speedupVal").textContent = info.speedup.raw.split("BENCHMARK_SPEEDUP")[1].trim();
+    }
+  } else {
+    benchCard.style.display = "none";
+  }
 }
 
 async function updateProcStatus() {
   const st = await fetchJSON("/api/proc_status");
   const el = document.getElementById("procStatus");
   if (!el) return;
-  
+
   const icon = st.running ? '<span class="status-pill status-running"></span>' : '<span class="status-pill status-idle"></span>';
   el.innerHTML = `<div class="flex" style="justify-content:center;">${icon} ${st.running ? `Running (PID ${st.pid})` : "System Idle"}</div>`;
+
+  if (!st.running) {
+    // If not running, we can reset terminal offset for next run if needed, 
+    // but usually we want to see the last logs.
+  }
 }
 
 async function tick() {
   if (!state.runDir) return;
 
   await updateProcStatus();
+  await updateTerminal();
+
   const q = `run_dir=${encodeURIComponent(state.runDir)}`;
   const [train, gpu, sys, fns, kern, kmet] = await Promise.all([
     fetchJSON(`/api/csv?file=train_metrics&${q}&tail=6000`),
@@ -266,9 +310,14 @@ async function tick() {
   const lossPts = trainPts.filter((p) => p.loss !== undefined && p.step !== undefined);
   const accPts = trainPts.filter((p) => p.acc !== undefined && p.step !== undefined);
   const stepPts = trainPts.filter((p) => p.step_s !== undefined && p.step !== undefined);
+  const pNormPts = trainPts.filter((p) => p.param_l2 !== undefined && p.step !== undefined);
+  const gNormPts = trainPts.filter((p) => p.grad_l2 !== undefined && p.step !== undefined);
+
   plotLine("lossPlot", "Loss", ...seriesFromPoints(lossPts, "step", "loss"), "step", "loss");
   plotLine("accPlot", "Accuracy", ...seriesFromPoints(accPts, "step", "acc"), "step", "acc");
   plotLine("stepSPlot", "Step Time", ...seriesFromPoints(stepPts, "step", "step_s"), "step", "s");
+  plotLine("paramNormPlot", "Parameter L2 Norm", ...seriesFromPoints(pNormPts, "step", "param_l2"), "step", "L2");
+  plotLine("gradNormPlot", "Gradient L2 Norm", ...seriesFromPoints(gNormPts, "step", "grad_l2"), "step", "L2");
 
   const gpuRows = (gpu.rows || []).map((r) => ({
     t_ms: Number(r.t_ms),
@@ -355,10 +404,29 @@ async function wireLaunchControls() {
         epochs: Number(document.getElementById("cfgEpochs").value || 2),
         batch: Number(document.getElementById("cfgBatch").value || 64),
         lr: Number(document.getElementById("cfgLr").value || 0.01),
-        seed: Number(document.getElementById("cfgSeed").value || 1337),
+        weight_decay: Number(document.getElementById("cfgWeightDecay").value || 0.0),
+        log_every: Number(document.getElementById("cfgLogEvery").value || 50),
+        eval_every: Number(document.getElementById("cfgEvalEvery").value || 200),
+        max_steps: Number(document.getElementById("cfgMaxSteps").value || 0),
+        norm_log_multiplier: Number(document.getElementById("cfgNormMult").value || 5),
         profile_interval_ms: Number(document.getElementById("cfgProfileInterval").value || 200),
-        no_shuffle: Boolean(document.getElementById("cfgNoShuffle").checked),
+
+        enable_h2d_pipeline: document.getElementById("cfgH2DPipeline").checked,
+        enable_log_sync_optimizations: document.getElementById("cfgLogSync").checked,
+        enable_async_checkpoint: document.getElementById("cfgAsyncCkpt").checked,
+        enable_cuda_graph_sgd: document.getElementById("cfgCudaGraph").checked,
+        enable_async_eval: document.getElementById("cfgAsyncEval").checked,
+        shuffle_train: !document.getElementById("cfgNoShuffle").checked,
+
+        benchmark_compare: document.getElementById("cfgBenchmark").checked,
+        benchmark_steps: Number(document.getElementById("cfgBenchSteps").value || 200),
       };
+
+      // Clear terminal for new run
+      const terminal = document.getElementById("terminal");
+      if (terminal) terminal.innerHTML = "";
+      state.terminalOffset = 0;
+
       try {
         const r = await postJSON("/api/start", payload);
         await loadRuns();
