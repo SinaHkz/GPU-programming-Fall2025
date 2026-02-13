@@ -63,7 +63,10 @@ Tensor& Tensor::operator=(Tensor&& other) noexcept {
 
 void Tensor::resize(const std::vector<int>& shape) {
   const size_t new_numel = numel_from_shape(shape);
-  if (new_numel == numel_ && shape == shape_) return;
+  if (new_numel == numel_) {
+    shape_ = shape;
+    return;
+  }
   free_();
   shape_ = shape;
   numel_ = new_numel;

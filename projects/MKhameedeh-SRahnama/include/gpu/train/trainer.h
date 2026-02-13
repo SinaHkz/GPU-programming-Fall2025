@@ -8,10 +8,15 @@
 
 namespace gpu {
 
+struct TrainSummary {
+  uint64_t steps{0};
+  double avg_step_s{0.0};
+};
+
 class Trainer {
  public:
   Trainer(TrainConfig cfg, std::unique_ptr<Dataset> dataset, std::unique_ptr<Model> model);
-  void run();
+  TrainSummary run();
 
  private:
   TrainConfig cfg_;

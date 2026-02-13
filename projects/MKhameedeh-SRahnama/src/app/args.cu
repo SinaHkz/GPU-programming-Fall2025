@@ -68,6 +68,24 @@ TrainConfig parse_args(int argc, char** argv) {
       cfg.eval_every = std::stoi(need("--eval-every"));
     } else if (has_arg(a, "--weight-decay")) {
       cfg.weight_decay = std::stof(need("--weight-decay"));
+    } else if (has_arg(a, "--max-steps")) {
+      cfg.max_steps = std::stoi(need("--max-steps"));
+    } else if (has_arg(a, "--no-h2d-pipeline")) {
+      cfg.enable_h2d_pipeline = false;
+    } else if (has_arg(a, "--no-log-sync-opt")) {
+      cfg.enable_log_sync_optimizations = false;
+    } else if (has_arg(a, "--no-async-checkpoint")) {
+      cfg.enable_async_checkpoint = false;
+    } else if (has_arg(a, "--cuda-graph-sgd")) {
+      cfg.enable_cuda_graph_sgd = true;
+    } else if (has_arg(a, "--async-eval")) {
+      cfg.enable_async_eval = true;
+    } else if (has_arg(a, "--norm-log-mult")) {
+      cfg.norm_log_multiplier = std::stoi(need("--norm-log-mult"));
+    } else if (has_arg(a, "--benchmark-compare")) {
+      cfg.benchmark_compare = true;
+    } else if (has_arg(a, "--benchmark-steps")) {
+      cfg.benchmark_steps = std::stoi(need("--benchmark-steps"));
     } else if (has_arg(a, "--profile-interval-ms")) {
       cfg.profile_interval_ms = std::stoi(need("--profile-interval-ms"));
     } else if (has_arg(a, "--no-shuffle")) {

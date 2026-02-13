@@ -22,6 +22,7 @@ struct TrainConfig {
   int log_every{50};
   int eval_every{200};
   int save_every{0};  // steps (0 disables)
+  int max_steps{0};   // 0 disables step cap
 
   bool shuffle_train{true};
   bool use_fp16{false};  // reserved

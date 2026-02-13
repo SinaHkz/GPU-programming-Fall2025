@@ -1,8 +1,5 @@
 #include "gpu/kernels/sgd.h"
 
-#include "gpu/core/profiler.h"
-#include "gpu/utils/cuda_check.h"
-
 namespace gpu {
 
 __global__ void sgd_kernel(float* w, const float* g, size_t n, float lr, float wd) {
@@ -13,13 +10,11 @@ __global__ void sgd_kernel(float* w, const float* g, size_t n, float lr, float w
 }
 
 void sgd_step(Tensor& w, const Tensor& grad_w, float lr, float weight_decay) {
-  Profiler::ScopedGpuTimer t("sgd_step");
   const size_t n = w.numel();
   const int threads = 256;
   const int blocks = static_cast<int>((n + threads - 1) / threads);
   Profiler::instance().record_kernel_launch("sgd_kernel", (const void*)sgd_kernel, dim3(blocks), dim3(threads));
   sgd_kernel<<<blocks, threads>>>(w.data(), grad_w.data(), n, lr, weight_decay);
-  GPU_CUDA_CHECK(cudaGetLastError());
 }
 
 }  // namespace gpu
