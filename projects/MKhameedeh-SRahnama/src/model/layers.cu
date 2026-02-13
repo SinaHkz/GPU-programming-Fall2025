@@ -9,6 +9,7 @@
 #include <stdexcept>
 
 #include "gpu/utils/cuda_check.h"
+#include "gpu/utils/cuda_profiled.h"
 
 namespace gpu {
 
@@ -35,8 +36,8 @@ Conv2D::Conv2D(int in_c, int out_c, int k, int stride, int pad, int seed, const 
 }
 
 Tensor Conv2D::forward(const Tensor& x) {
-  x_cache_.resize(x.shape());
-  GPU_CUDA_CHECK(cudaMemcpy(x_cache_.data(), x.data(), x.bytes(), cudaMemcpyDeviceToDevice));
+  x_cache_ = Tensor(x.shape(), name_ + ".x_cache");
+  GPU_CUDA_CHECK(cudaMemcpyProfiled(x_cache_.data(), x.data(), x.bytes(), cudaMemcpyDeviceToDevice));
 
   const int n = x.dim(0);
   const int in_h = x.dim(2);
@@ -67,8 +68,8 @@ std::vector<Param> Conv2D::params() const {
 
 // ---- ReLU ----
 Tensor ReLU::forward(const Tensor& x) {
-  x_cache_.resize(x.shape());
-  GPU_CUDA_CHECK(cudaMemcpy(x_cache_.data(), x.data(), x.bytes(), cudaMemcpyDeviceToDevice));
+  x_cache_ = Tensor(x.shape(), name_ + ".x_cache");
+  GPU_CUDA_CHECK(cudaMemcpyProfiled(x_cache_.data(), x.data(), x.bytes(), cudaMemcpyDeviceToDevice));
   Tensor y(x.shape(), name_ + ".y");
   relu_forward(x, y);
   return y;
@@ -84,8 +85,8 @@ Tensor ReLU::backward(const Tensor& grad_out) {
 MaxPool2D::MaxPool2D(int k, int stride, const std::string& name) : name_(name), d_{k, stride} {}
 
 Tensor MaxPool2D::forward(const Tensor& x) {
-  x_cache_.resize(x.shape());
-  GPU_CUDA_CHECK(cudaMemcpy(x_cache_.data(), x.data(), x.bytes(), cudaMemcpyDeviceToDevice));
+  x_cache_ = Tensor(x.shape(), name_ + ".x_cache");
+  GPU_CUDA_CHECK(cudaMemcpyProfiled(x_cache_.data(), x.data(), x.bytes(), cudaMemcpyDeviceToDevice));
 
   const int n = x.dim(0);
   const int c = x.dim(1);
@@ -115,13 +116,13 @@ Tensor Flatten::forward(const Tensor& x) {
   const int h = in_shape_[2];
   const int w = in_shape_[3];
   Tensor y({n, c * h * w}, name_ + ".y");
-  GPU_CUDA_CHECK(cudaMemcpy(y.data(), x.data(), x.bytes(), cudaMemcpyDeviceToDevice));
+  GPU_CUDA_CHECK(cudaMemcpyProfiled(y.data(), x.data(), x.bytes(), cudaMemcpyDeviceToDevice));
   return y;
 }
 
 Tensor Flatten::backward(const Tensor& grad_out) {
   Tensor grad_x(in_shape_, name_ + ".grad_x");
-  GPU_CUDA_CHECK(cudaMemcpy(grad_x.data(), grad_out.data(), grad_out.bytes(), cudaMemcpyDeviceToDevice));
+  GPU_CUDA_CHECK(cudaMemcpyProfiled(grad_x.data(), grad_out.data(), grad_out.bytes(), cudaMemcpyDeviceToDevice));
   return grad_x;
 }
 
@@ -139,8 +140,8 @@ Linear::Linear(int in_features, int out_features, int seed, const std::string& n
 }
 
 Tensor Linear::forward(const Tensor& x) {
-  x_cache_.resize(x.shape());
-  GPU_CUDA_CHECK(cudaMemcpy(x_cache_.data(), x.data(), x.bytes(), cudaMemcpyDeviceToDevice));
+  x_cache_ = Tensor(x.shape(), name_ + ".x_cache");
+  GPU_CUDA_CHECK(cudaMemcpyProfiled(x_cache_.data(), x.data(), x.bytes(), cudaMemcpyDeviceToDevice));
   Tensor y({x.dim(0), out_}, name_ + ".y");
   linear_forward(x, w_, b_, y);
   return y;

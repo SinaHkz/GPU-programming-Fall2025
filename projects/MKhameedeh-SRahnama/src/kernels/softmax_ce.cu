@@ -4,6 +4,7 @@
 
 #include "gpu/core/profiler.h"
 #include "gpu/utils/cuda_check.h"
+#include "gpu/utils/cuda_profiled.h"
 
 namespace gpu {
 
@@ -112,17 +113,19 @@ float softmax_cross_entropy_backward(const Tensor& logits, const std::vector<int
   if (static_cast<int>(labels.size()) != n) return 0.0f;
 
   int* d_labels = tmp().ensure_labels(n);
-  float* d_loss = compute_loss ? tmp().ensure_loss(n) : nullptr;
-  GPU_CUDA_CHECK(cudaMemcpy(d_labels, labels.data(), n * sizeof(int), cudaMemcpyHostToDevice));
+  float* d_loss = tmp().ensure_loss(n);
+  GPU_CUDA_CHECK(cudaMemcpyProfiled(d_labels, labels.data(), n * sizeof(int), cudaMemcpyHostToDevice));
 
   const int threads = 256;
-  if (compute_loss) GPU_CUDA_CHECK(cudaMemset(d_loss, 0, n * sizeof(float)));
+  GPU_CUDA_CHECK(cudaMemset(d_loss, 0, n * sizeof(float)));
+  Profiler::instance().record_kernel_launch("softmax_ce_bwd_kernel", (const void*)softmax_ce_bwd_kernel, dim3(n),
+                                            dim3(threads));
   softmax_ce_bwd_kernel<<<n, threads>>>(logits.data(), d_labels, grad_logits.data(), d_loss, n, classes);
   GPU_CUDA_CHECK(cudaGetLastError());
   if (!compute_loss) return 0.0f;
 
   std::vector<float> host_loss(static_cast<size_t>(n));
-  GPU_CUDA_CHECK(cudaMemcpy(host_loss.data(), d_loss, n * sizeof(float), cudaMemcpyDeviceToHost));
+  GPU_CUDA_CHECK(cudaMemcpyProfiled(host_loss.data(), d_loss, n * sizeof(float), cudaMemcpyDeviceToHost));
   float sum = 0.0f;
   for (float v : host_loss) sum += v;
   return sum / static_cast<float>(n);
@@ -136,13 +139,15 @@ int argmax_accuracy(const Tensor& logits, const std::vector<int>& labels) {
 
   int* d_labels = tmp().ensure_labels(n);
   int* d_correct = tmp().ensure_correct(n);
-  GPU_CUDA_CHECK(cudaMemcpy(d_labels, labels.data(), n * sizeof(int), cudaMemcpyHostToDevice));
+  GPU_CUDA_CHECK(cudaMemcpyProfiled(d_labels, labels.data(), n * sizeof(int), cudaMemcpyHostToDevice));
 
+  Profiler::instance().record_kernel_launch("argmax_acc_kernel", (const void*)argmax_acc_kernel, dim3((n + 255) / 256),
+                                            dim3(256));
   argmax_acc_kernel<<<(n + 255) / 256, 256>>>(logits.data(), d_labels, d_correct, n, classes);
   GPU_CUDA_CHECK(cudaGetLastError());
 
   std::vector<int> host_correct(static_cast<size_t>(n));
-  GPU_CUDA_CHECK(cudaMemcpy(host_correct.data(), d_correct, n * sizeof(int), cudaMemcpyDeviceToHost));
+  GPU_CUDA_CHECK(cudaMemcpyProfiled(host_correct.data(), d_correct, n * sizeof(int), cudaMemcpyDeviceToHost));
   int sum = 0;
   for (int v : host_correct) sum += v;
   return sum;

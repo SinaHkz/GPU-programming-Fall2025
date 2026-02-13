@@ -5,6 +5,7 @@
 
 #include "gpu/core/profiler.h"
 #include "gpu/utils/cuda_check.h"
+#include "gpu/utils/cuda_profiled.h"
 
 namespace gpu {
 
@@ -68,11 +69,14 @@ double tensor_sumsq(const Tensor& x) {
   const int threads = 256;
   const int blocks = static_cast<int>((n + static_cast<size_t>(threads) * 4 - 1) / (static_cast<size_t>(threads) * 4));
   float* d_partial = tmp().ensure_partial(static_cast<size_t>(blocks));
+  Profiler::instance().record_kernel_launch("sumsq_partial_kernel", (const void*)sumsq_partial_kernel, dim3(blocks),
+                                            dim3(threads));
   sumsq_partial_kernel<<<blocks, threads>>>(x.data(), d_partial, n);
   GPU_CUDA_CHECK(cudaGetLastError());
 
   std::vector<float> host(static_cast<size_t>(blocks));
-  GPU_CUDA_CHECK(cudaMemcpy(host.data(), d_partial, host.size() * sizeof(float), cudaMemcpyDeviceToHost));
+  GPU_CUDA_CHECK(
+      cudaMemcpyProfiled(host.data(), d_partial, host.size() * sizeof(float), cudaMemcpyDeviceToHost));
   double sum = 0.0;
   for (float v : host) sum += static_cast<double>(v);
   return sum;
@@ -81,4 +85,3 @@ double tensor_sumsq(const Tensor& x) {
 double tensor_l2_norm(const Tensor& x) { return std::sqrt(tensor_sumsq(x)); }
 
 }  // namespace gpu
-

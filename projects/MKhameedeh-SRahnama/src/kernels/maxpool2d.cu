@@ -96,6 +96,8 @@ void maxpool2d_forward_nchw(const Tensor& x, const MaxPool2DDesc& d, Tensor& y, 
   const int total = n * c * out_h * out_w;
   const int threads = 256;
   const int blocks = (total + threads - 1) / threads;
+  Profiler::instance().record_kernel_launch("maxpool_fwd_kernel", (const void*)maxpool_fwd_kernel, dim3(blocks),
+                                            dim3(threads));
   maxpool_fwd_kernel<<<blocks, threads>>>(x.data(), y.data(), mask.data(), n, c, h, w, out_h, out_w, d.k, d.stride);
   GPU_CUDA_CHECK(cudaGetLastError());
 }
@@ -108,9 +110,10 @@ void maxpool2d_backward_nchw(const Tensor& x, const MaxPool2DDesc& d, const Tens
   const int total = static_cast<int>(grad_y.numel());
   const int threads = 256;
   const int blocks = (total + threads - 1) / threads;
+  Profiler::instance().record_kernel_launch("maxpool_bwd_kernel", (const void*)maxpool_bwd_kernel, dim3(blocks),
+                                            dim3(threads));
   maxpool_bwd_kernel<<<blocks, threads>>>(grad_y.data(), mask.data(), grad_x.data(), total);
   GPU_CUDA_CHECK(cudaGetLastError());
 }
 
 }  // namespace gpu
-

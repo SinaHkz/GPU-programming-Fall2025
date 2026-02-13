@@ -3,6 +3,8 @@
 #include <atomic>
 #include <numeric>
 
+#include "gpu/utils/cuda_profiled.h"
+
 namespace gpu {
 
 static std::atomic<uint64_t> g_current_bytes{0};
@@ -93,12 +95,12 @@ void Tensor::zero_() {
 
 void Tensor::copy_from_host(const float* host, size_t n) {
   if (n > numel_) n = numel_;
-  GPU_CUDA_CHECK(cudaMemcpy(data_, host, n * sizeof(float), cudaMemcpyHostToDevice));
+  GPU_CUDA_CHECK(cudaMemcpyProfiled(data_, host, n * sizeof(float), cudaMemcpyHostToDevice));
 }
 
 void Tensor::copy_to_host(float* host, size_t n) const {
   if (n > numel_) n = numel_;
-  GPU_CUDA_CHECK(cudaMemcpy(host, data_, n * sizeof(float), cudaMemcpyDeviceToHost));
+  GPU_CUDA_CHECK(cudaMemcpyProfiled(host, data_, n * sizeof(float), cudaMemcpyDeviceToHost));
 }
 
 }  // namespace gpu

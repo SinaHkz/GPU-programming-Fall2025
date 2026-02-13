@@ -20,6 +20,7 @@ SRC := \
   src/core/logger.cu \
   src/core/metrics.cu \
   src/core/profiler.cu \
+  src/core/system_monitor.cu \
   src/datasets/mnist.cu \
   src/datasets/cifar10.cu \
   src/datasets/synthetic.cu \
@@ -44,6 +45,9 @@ HOST_FLAGS := -O3 -std=c++17
 
 LDFLAGS :=
 LDLIBS := -lcudart
+ifeq ($(shell uname -s),Linux)
+  LDLIBS += -ldl
+endif
 
 ifeq ($(NVTX),1)
   CUDA_FLAGS += -DENABLE_NVTX=1
@@ -55,6 +59,7 @@ ifeq ($(PROFILE),1)
 endif
 
 .PHONY: all build clean train data-mnist data-cifar10 run-synth dashboard help
+.PHONY: nsys ncu ncu-metrics
 
 help:
 	@echo "Targets:"
@@ -63,6 +68,7 @@ help:
 	@echo "  data-mnist        Download MNIST into data/mnist/"
 	@echo "  data-cifar10      Download CIFAR-10 into data/cifar10/"
 	@echo "  dashboard         Serve dashboard for runs/latest"
+	@echo "  ncu-metrics       Run Nsight Compute and export kernel_metrics.csv"
 
 all: build
 
@@ -98,6 +104,7 @@ RUN_NAME ?=
 SAVE_EVERY ?= 0
 RESUME ?=
 NO_SHUFFLE ?= 0
+CONFIG ?= configs/lenet_mnist.json
 
 train: build
 	$(BIN) --arch $(ARCH) --dataset $(DATASET) --epochs $(EPOCHS) --batch $(BATCH) --lr $(LR) --seed $(SEED) --data-dir $(DATA_DIR) --out-dir $(OUT_DIR) --run-name "$(RUN_NAME)" --save-every $(SAVE_EVERY) $(if $(RESUME),--resume $(RESUME),) $(if $(filter 1,$(NO_SHUFFLE)),--no-shuffle,)
@@ -107,3 +114,23 @@ run-synth: build
 
 dashboard:
 	$(PYTHON) tools/serve_dashboard.py --run-dir $(OUT_DIR)/latest --port 8080
+	python tools/serve_dashboard.py --run-dir $(OUT_DIR)/latest --port 8080
+
+# ---- Nsight ----
+# Requires Nsight Systems/Compute installed (nsys/ncu in PATH). Best results with NVTX=1 PROFILE=1.
+NSYS_OUT ?= $(OUT_DIR)/nsys_report
+NCU_OUT ?= $(OUT_DIR)/ncu_report
+KERNEL ?=
+
+nsys: build
+	nsys profile -o $(NSYS_OUT) --trace=cuda,nvtx,osrt --sample=none --cpuctxsw=none --force-overwrite=true \
+	  $(BIN) --arch $(ARCH) --dataset $(DATASET) --epochs $(EPOCHS) --batch $(BATCH) --lr $(LR) --seed $(SEED) --data-dir $(DATA_DIR) --out-dir $(OUT_DIR) --run-name "$(RUN_NAME)" --save-every $(SAVE_EVERY) $(if $(RESUME),--resume $(RESUME),) $(if $(filter 1,$(NO_SHUFFLE)),--no-shuffle,) --profile-interval-ms 200
+
+ncu: build
+	ncu -o $(NCU_OUT) --set full --target-processes all --force-overwrite $(if $(KERNEL),--kernel-name $(KERNEL),) \
+	  $(BIN) --arch $(ARCH) --dataset $(DATASET) --epochs $(EPOCHS) --batch $(BATCH) --lr $(LR) --seed $(SEED) --data-dir $(DATA_DIR) --out-dir $(OUT_DIR) --run-name "$(RUN_NAME)" --save-every $(SAVE_EVERY) $(if $(RESUME),--resume $(RESUME),) $(if $(filter 1,$(NO_SHUFFLE)),--no-shuffle,) --profile-interval-ms 200
+
+# Nsight Compute metrics -> runs/<run>/profiling/kernel_metrics.csv
+NCU_METRICS ?= achieved_occupancy
+ncu-metrics: build
+	python tools/collect_ncu_metrics.py --config $(CONFIG) --metrics $(NCU_METRICS)

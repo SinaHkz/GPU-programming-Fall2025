@@ -27,17 +27,9 @@ struct TrainConfig {
   bool shuffle_train{true};
   bool use_fp16{false};  // reserved
 
-  // Performance toggles.
-  bool enable_h2d_pipeline{true};
-  bool enable_log_sync_optimizations{true};
-  bool enable_async_checkpoint{true};
-  bool enable_cuda_graph_sgd{false};
-  bool enable_async_eval{false};
-  int norm_log_multiplier{5};  // compute norms every (log_every * multiplier)
-
-  // Runs baseline+optimized back-to-back and prints speedup.
-  bool benchmark_compare{false};
-  int benchmark_steps{200};
+  // Profiling
+  // 0 disables background system/GPU sampling.
+  int profile_interval_ms{200};
 };
 
 }  // namespace gpu

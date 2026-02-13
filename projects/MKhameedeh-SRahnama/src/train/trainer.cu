@@ -19,6 +19,7 @@
 #include "gpu/core/logger.h"
 #include "gpu/core/metrics.h"
 #include "gpu/core/profiler.h"
+#include "gpu/core/system_monitor.h"
 #include "gpu/core/tensor.h"
 #include "gpu/datasets/cifar10.h"
 #include "gpu/datasets/mnist.h"
@@ -343,15 +344,7 @@ static void write_config_json(const std::filesystem::path& dir, const TrainConfi
   out << "\"log_every\":" << cfg.log_every << ",";
   out << "\"eval_every\":" << cfg.eval_every << ",";
   out << "\"save_every\":" << cfg.save_every << ",";
-  out << "\"max_steps\":" << cfg.max_steps << ",";
-  out << "\"enable_h2d_pipeline\":" << (cfg.enable_h2d_pipeline ? "true" : "false") << ",";
-  out << "\"enable_log_sync_optimizations\":" << (cfg.enable_log_sync_optimizations ? "true" : "false") << ",";
-  out << "\"enable_async_checkpoint\":" << (cfg.enable_async_checkpoint ? "true" : "false") << ",";
-  out << "\"enable_cuda_graph_sgd\":" << (cfg.enable_cuda_graph_sgd ? "true" : "false") << ",";
-  out << "\"enable_async_eval\":" << (cfg.enable_async_eval ? "true" : "false") << ",";
-  out << "\"norm_log_multiplier\":" << cfg.norm_log_multiplier << ",";
-  out << "\"benchmark_compare\":" << (cfg.benchmark_compare ? "true" : "false") << ",";
-  out << "\"benchmark_steps\":" << cfg.benchmark_steps << ",";
+  out << "\"profile_interval_ms\":" << cfg.profile_interval_ms << ",";
   out << "\"shuffle_train\":" << (cfg.shuffle_train ? "true" : "false");
   out << "}\n";
 }
@@ -394,6 +387,11 @@ TrainSummary Trainer::run() {
   MetricsSink metrics;
   metrics.set_run_dir(run_dir);
   Profiler::instance().set_run_dir(run_dir);
+
+  SystemMonitor monitor;
+  int dev = 0;
+  GPU_CUDA_CHECK(cudaGetDevice(&dev));
+  monitor.start(run_dir, cfg_.profile_interval_ms, dev);
 
   Logger::instance().info("Run dir: " + run_dir.string());
 
@@ -519,21 +517,40 @@ TrainSummary Trainer::run() {
 
     auto train_one_step = [&](Tensor& x_d) -> bool {
       const double step_start = steady_seconds();
-      Tensor logits = model_->forward(x_d);
-      grad_logits.resize({batch.n, batch.num_classes});
-      const bool do_log = ((global_step % log_every) == 0);
-      const bool compute_step_scalars = do_log || !cfg_.enable_log_sync_optimizations;
 
-      const float loss = softmax_cross_entropy_backward(logits, batch.y, grad_logits, compute_step_scalars);
-      (void)model_->backward(grad_logits);
+      Tensor x_d({batch.n, batch.c, batch.h, batch.w}, "x");
+      {
+        Profiler::ScopedCpuTimer t("step_h2d_copy");
+        x_d.copy_from_host(batch.x.data(), batch.x.size());
+      }
 
-      // SGD update (optionally via CUDA graph replay).
-      sgd_graph.run(model_->params(), cfg_.lr, cfg_.weight_decay);
+      Tensor logits;
+      {
+        Profiler::ScopedCpuTimer t("step_forward");
+        logits = model_->forward(x_d);
+      }
 
-      const double step_s = steady_seconds() - step_start;
-      samples += static_cast<double>(batch.n);
-      step_s_sum += step_s;
-      summary.steps += 1;
+      Tensor grad_logits({batch.n, batch.num_classes}, "grad_logits");
+      float loss = 0.0f;
+      {
+        Profiler::ScopedCpuTimer t("step_loss_backward");
+        loss = softmax_cross_entropy_backward(logits, batch.y, grad_logits);
+        (void)model_->backward(grad_logits);
+      }
+
+      // SGD update.
+      {
+        Profiler::ScopedCpuTimer t("step_sgd");
+        for (auto p : model_->params()) sgd_step(*p.w, *p.grad, cfg_.lr, cfg_.weight_decay);
+      }
+
+      int correct = 0;
+      float acc = 0.0f;
+      {
+        Profiler::ScopedCpuTimer t("step_accuracy");
+        correct = argmax_accuracy(logits, batch.y);
+        acc = static_cast<float>(correct) / static_cast<float>(batch.n);
+      }
 
       int correct = 0;
       float acc = 0.0f;
@@ -592,17 +609,14 @@ TrainSummary Trainer::run() {
 
       const uint64_t eval_every = (cfg_.eval_every <= 0) ? 0ULL : static_cast<uint64_t>(cfg_.eval_every);
       if (eval_every > 0 && global_step > 0 && (global_step % eval_every) == 0) {
-        if (cfg_.enable_async_eval && async_evaluator) {
-          request_checkpoint(global_step);
-          async_evaluator->request(epoch, global_step);
-        } else {
-          run_eval(epoch, global_step);
-        }
+        Profiler::ScopedCpuTimer te("eval");
+        run_eval(epoch, global_step);
       }
 
       if (cfg_.save_every > 0 && global_step > 0 &&
           (global_step % static_cast<uint64_t>(cfg_.save_every) == 0)) {
-        request_checkpoint(global_step);
+        Profiler::ScopedCpuTimer ts("checkpoint_save");
+        save_checkpoint(ckpt_dir, *model_, global_step);
       }
 
       global_step += 1;
@@ -661,15 +675,10 @@ TrainSummary Trainer::run() {
     Logger::instance().info("Epoch " + std::to_string(epoch) + " done: " + std::to_string(samples / epoch_s) +
                             " samples/s");
 
-    if (!stop_training) {
-      if (cfg_.enable_async_eval && async_evaluator) {
-        request_checkpoint(global_step);
-        async_evaluator->request(epoch, global_step);
-      } else {
-        run_eval(epoch, global_step);
-      }
+    {
+      Profiler::ScopedCpuTimer te("eval_epoch_end");
+      run_eval(epoch, global_step);
     }
-    if (stop_training) break;
   }
 
   if (ckpt_writer) ckpt_writer->flush();

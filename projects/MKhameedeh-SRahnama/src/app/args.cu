@@ -22,15 +22,7 @@ void print_help(const char* prog) {
                "  --log-every <int>\n"
                "  --eval-every <int>\n"
                "  --weight-decay <float>\n"
-               "  --max-steps <int>\n"
-               "  --no-h2d-pipeline\n"
-               "  --no-log-sync-opt\n"
-               "  --no-async-checkpoint\n"
-               "  --cuda-graph-sgd\n"
-               "  --async-eval\n"
-               "  --norm-log-mult <int>\n"
-               "  --benchmark-compare\n"
-               "  --benchmark-steps <int>\n"
+               "  --profile-interval-ms <int> (0 disables)\n"
                "  --no-shuffle\n";
 }
 
@@ -94,6 +86,8 @@ TrainConfig parse_args(int argc, char** argv) {
       cfg.benchmark_compare = true;
     } else if (has_arg(a, "--benchmark-steps")) {
       cfg.benchmark_steps = std::stoi(need("--benchmark-steps"));
+    } else if (has_arg(a, "--profile-interval-ms")) {
+      cfg.profile_interval_ms = std::stoi(need("--profile-interval-ms"));
     } else if (has_arg(a, "--no-shuffle")) {
       cfg.shuffle_train = false;
     } else {

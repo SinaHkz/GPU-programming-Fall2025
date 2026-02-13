@@ -1,41 +1,210 @@
 <!doctype html>
-<html>
-  <head>
+<html lang="en" data-theme="dark">
+<head>
+    <script>
+        (function () {
+            try {
+                var t = localStorage.getItem("theme");
+                if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+                else document.documentElement.setAttribute("data-theme", "dark");
+            } catch (e) {
+                document.documentElement.setAttribute("data-theme", "dark");
+            }
+        })();
+    </script>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>GPU Trainer Dashboard</title>
-    <style>
-      body { font-family: system-ui, sans-serif; margin: 20px; max-width: 980px; }
-      .row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-      .card { border: 1px solid #ddd; border-radius: 10px; padding: 12px; }
-      canvas { width: 100%; height: 260px; }
-      code { background: #f6f6f6; padding: 2px 6px; border-radius: 6px; }
-    </style>
-  </head>
-  <body>
-    <h1>GPU Trainer Dashboard</h1>
-    <p>Serving metrics from <code id="runDir"></code></p>
-    <div class="row">
-      <div class="card">
-        <h3>Loss</h3>
-        <canvas id="loss"></canvas>
-      </div>
-      <div class="card">
-        <h3>Accuracy</h3>
-        <canvas id="acc"></canvas>
-      </div>
-    </div>
-    <div class="row" style="margin-top: 16px;">
-      <div class="card">
-        <h3>GPU Memory Free (MB)</h3>
-        <canvas id="memFree"></canvas>
-      </div>
-      <div class="card">
-        <h3>Step Time (s)</h3>
-        <canvas id="stepS"></canvas>
-      </div>
-    </div>
-    <script src="/app.js"></script>
-  </body>
-</html>
+    <title>GPU Trainer Pro | Dashboard</title>
+    <link rel="stylesheet" href="/vendor/uPlot.min.css" />
+    <link rel="stylesheet" href="/styles.css" />
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body>
+    <div class="layout">
+        <aside>
+            <div class="brand">
+                <div class="brand-icon">
+                    <i data-lucide="zap" stroke="#fff"></i>
+                </div>
+                <h1>GPU Trainer Pro</h1>
+            </div>
 
+            <div class="section-label">Active Run</div>
+            <div class="field">
+                <label for="runSelect">Select Run Session</label>
+                <select id="runSelect"></select>
+            </div>
+
+            <div class="section-label">Launch New Run</div>
+            <details class="card" open>
+                <summary><i data-lucide="plus-circle" size="18"></i> Configuration</summary>
+                <div style="margin-top: 16px;">
+                    <div class="field">
+                        <label>Executable Path</label>
+                        <input id="cfgExe" placeholder="build/gpu_trainer.exe" />
+                    </div>
+                    <div class="field">
+                        <label>Run Name Prefix</label>
+                        <input id="cfgRunName" placeholder="e.g. baseline" />
+                    </div>
+                    <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 0;">
+                        <div class="field">
+                            <label>Architecture</label>
+                            <select id="cfgArch">
+                                <option value="lenet">LeNet</option>
+                                <option value="simple_cnn">Simple CNN</option>
+                                <option value="mlp">MLP</option>
+                            </select>
+                        </div>
+                        <div class="field">
+                            <label>Dataset</label>
+                            <select id="cfgDataset">
+                                <option value="mnist">MNIST</option>
+                                <option value="cifar10">CIFAR-10</option>
+                                <option value="synthetic">Synthetic</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 0;">
+                        <div class="field">
+                            <label>Epochs</label>
+                            <input id="cfgEpochs" type="number" value="2" />
+                        </div>
+                        <div class="field">
+                            <label>Batch Size</label>
+                            <input id="cfgBatch" type="number" value="64" />
+                        </div>
+                    </div>
+                    <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 0;">
+                        <div class="field">
+                            <label>Learning Rate</label>
+                            <input id="cfgLr" type="number" step="0.0001" value="0.01" />
+                        </div>
+                        <div class="field">
+                            <label>Seed</label>
+                            <input id="cfgSeed" type="number" value="1337" />
+                        </div>
+                    </div>
+                    <div class="field">
+                        <label>Profile Interval (ms)</label>
+                        <input id="cfgProfileInterval" type="number" value="200" />
+                    </div>
+                    <label style="display:flex; align-items:center; gap:8px; margin: 8px 0 16px; cursor:pointer;">
+                        <input id="cfgNoShuffle" type="checkbox" style="width: auto;" /> No Shuffle
+                    </label>
+                    <div class="flex" style="justify-content: space-between; gap: 10px;">
+                        <button id="btnStart" style="flex: 2;"><i data-lucide="play" size="16"></i> Start</button>
+                        <button id="btnStop" class="btn-ghost" style="flex: 1;"><i data-lucide="square" size="16"></i> Stop</button>
+                    </div>
+                    <div id="procStatus" style="font-size: 12px; margin-top: 12px; text-align: center; color: var(--muted);"></div>
+                </div>
+            </details>
+
+            <div style="margin-top: auto; padding-top: 20px;">
+                <button id="themeToggle" class="btn-ghost" style="width: 100%;">
+                    <i data-lucide="sun-moon" size="16"></i> Toggle Theme
+                </button>
+            </div>
+        </aside>
+
+        <main>
+            <header>
+                <div>
+                    <h2 style="margin: 0; font-size: 24px;">Metrics Dashboard</h2>
+                    <div id="runInfo" class="run-meta" style="margin-top: 8px;"></div>
+                </div>
+                <div class="flex">
+                    <div class="badge">Root: <code id="runsRoot"></code></div>
+                    <div class="badge">Active: <code id="runDir"></code></div>
+                </div>
+            </header>
+
+            <div class="section-label">Training Performance</div>
+            <div class="grid">
+                <div class="card">
+                    <div class="flex" style="margin-bottom: 12px;"><i data-lucide="trending-down" size="18" color="var(--danger)"></i><h3>Loss</h3></div>
+                    <div class="plot" id="lossPlot"></div>
+                </div>
+                <div class="card">
+                    <div class="flex" style="margin-bottom: 12px;"><i data-lucide="target" size="18" color="var(--success)"></i><h3>Accuracy</h3></div>
+                    <div class="plot" id="accPlot"></div>
+                </div>
+            </div>
+
+            <div class="section-label">Hardware Utilization</div>
+            <div class="grid">
+                <div class="card">
+                    <div class="flex" style="margin-bottom: 12px;"><i data-lucide="zap" size="18" color="var(--warning)"></i><h3>GPU Power (W)</h3></div>
+                    <div class="plot" id="gpuPowerPlot"></div>
+                </div>
+                <div class="card">
+                    <div class="flex" style="margin-bottom: 12px;"><i data-lucide="cpu" size="18" color="var(--accent)"></i><h3>GPU Utilization (%)</h3></div>
+                    <div class="plot" id="gpuUtilPlot"></div>
+                </div>
+            </div>
+
+            <div class="grid">
+                <div class="card">
+                    <div class="flex" style="margin-bottom: 12px;"><i data-lucide="database" size="18" color="var(--accent2)"></i><h3>GPU Memory (MB)</h3></div>
+                    <div class="plot" id="gpuMemUsedPlot"></div>
+                </div>
+                <div class="card">
+                    <div class="flex" style="margin-bottom: 12px;"><i data-lucide="timer" size="18"></i><h3>Step Time (s)</h3></div>
+                    <div class="plot" id="stepSPlot"></div>
+                </div>
+            </div>
+
+            <div class="section-label">System Resources</div>
+            <div class="grid">
+                <div class="card">
+                    <div class="flex" style="margin-bottom: 12px;"><i data-lucide="activity" size="18"></i><h3>Process CPU (%)</h3></div>
+                    <div class="plot" id="procCpuPlot"></div>
+                </div>
+                <div class="card">
+                    <div class="flex" style="margin-bottom: 12px;"><i data-lucide="microchip" size="18"></i><h3>Process RSS (MB)</h3></div>
+                    <div class="plot" id="procRssPlot"></div>
+                </div>
+            </div>
+
+            <div class="section-label">Profiling & Analysis</div>
+            <div class="grid">
+                <div class="card">
+                    <div class="flex" style="margin-bottom: 12px; justify-content: space-between;">
+                        <div class="flex">
+                            <i data-lucide="bar-chart-3" size="18"></i>
+                            <h3>Kernel Occupancy</h3>
+                        </div>
+                        <select id="kernelSelect" style="width: auto; padding: 4px 8px; font-size: 12px;"></select>
+                    </div>
+                    <div class="plot" id="occPlot"></div>
+                </div>
+                <div class="card">
+                    <div class="flex" style="margin-bottom: 12px; justify-content: space-between;">
+                        <div class="flex">
+                            <i data-lucide="list" size="18"></i>
+                            <h3>Functions Summary</h3>
+                        </div>
+                        <input id="fnFilter" placeholder="Filter functions..." style="width: 200px; padding: 4px 8px; font-size: 12px;" />
+                    </div>
+                    <div class="table-container" style="max-height: 320px; overflow-y: auto;">
+                        <table>
+                            <thead>
+                                <tr><th>Kind</th><th>Name</th><th>Calls</th><th>Total ms</th><th>Avg ms</th><th>Max ms</th><th>Total MB</th><th>GB/s</th></tr>
+                            </thead>
+                            <tbody id="fnTable"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="/vendor/uPlot.iife.min.js"></script>
+    <script src="/app.js"></script>
+    <script>
+        // Initialize Lucide icons
+        lucide.createIcons();
+    </script>
+</body>
+</html>
