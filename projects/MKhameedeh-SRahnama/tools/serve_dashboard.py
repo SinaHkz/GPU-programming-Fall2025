@@ -260,6 +260,7 @@ class Handler(BaseHTTPRequestHandler):
                     self.log_buffer.pop(0)
 
     def do_POST(self):
+        print(f"POST {self.path}")
         u = urlparse(self.path)
         if u.path not in ("/api/start", "/api/stop"):
             self.send_response(404)
@@ -295,7 +296,15 @@ class Handler(BaseHTTPRequestHandler):
         exe = payload.get("exe") or ""
         if not exe:
             # Default to build output.
-            exe = str((Path(__file__).parent.parent / "build" / ("gpu_trainer.exe" if os.name == "nt" else "gpu_trainer")).resolve())
+            build_dir = Path(__file__).parent.parent / "build"
+            exe_name = "gpu_trainer.exe" if os.name == "nt" else "gpu_trainer"
+            exe_path = build_dir / exe_name
+            # Fallback for WSL builds on Windows (no .exe)
+            if not exe_path.exists() and os.name == "nt":
+                alt_path = build_dir / "gpu_trainer"
+                if alt_path.exists():
+                    exe_path = alt_path
+            exe = str(exe_path.resolve())
 
         arch = payload.get("arch") or "lenet"
         dataset = payload.get("dataset") or "mnist"
@@ -338,6 +347,8 @@ class Handler(BaseHTTPRequestHandler):
         # Ensure runs land under the server's runs_root for monitoring.
         out_dir = str(self.runs_root)
 
+        print(f"Launching trainer: {exe}")
+        print(f"Run Name: {run_name}")
         args = [
             exe,
             "--arch", arch,
@@ -354,7 +365,7 @@ class Handler(BaseHTTPRequestHandler):
             "--log-every", str(log_every),
             "--eval-every", str(eval_every),
             "--max-steps", str(max_steps),
-            "--norm-log-multiplier", str(norm_log_multiplier),
+            "--norm-log-mult", str(norm_log_multiplier),
             "--benchmark-steps", str(benchmark_steps),
             "--profile-interval-ms", str(profile_interval_ms),
         ]
@@ -369,10 +380,10 @@ class Handler(BaseHTTPRequestHandler):
         if not enable_h2d_pipeline: args.append("--no-h2d-pipeline") 
         # Note: Need to check if executable supports --no-xxx style or if it just takes boolean.
         # Based on args.cu logic (guessed), I'll use standard flags if they exist.
-        if not enable_log_sync_optimizations: args.append("--no-log-sync-optimizations")
+        if not enable_log_sync_optimizations: args.append("--no-log-sync-opt")
         if not enable_async_checkpoint: args.append("--no-async-checkpoint")
-        if enable_cuda_graph_sgd: args.append("--enable-cuda-graph-sgd")
-        if enable_async_eval: args.append("--enable-async-eval")
+        if enable_cuda_graph_sgd: args.append("--cuda-graph-sgd")
+        if enable_async_eval: args.append("--async-eval")
 
         latest_txt = self.runs_root / "latest.txt"
         prev_latest = latest_txt.read_text(encoding="utf-8", errors="ignore").strip() if latest_txt.exists() else ""
@@ -392,19 +403,36 @@ class Handler(BaseHTTPRequestHandler):
 
         with self.proc_lock:
             self.proc = p
+            self.log_buffer.clear() # Clear logs for new run
         
         threading.Thread(target=self._read_logs, args=(p.stdout,), daemon=True).start()
 
         # Try to resolve the new run dir by watching latest.txt for a few seconds.
         new_dir = ""
         t0 = time.time()
-        while time.time() - t0 < 5.0:
+        while time.time() - t0 < 8.0:
+            if p.poll() is not None:
+                break
             if latest_txt.exists():
                 cur = latest_txt.read_text(encoding="utf-8", errors="ignore").strip()
                 if cur and cur != prev_latest and Path(cur).exists():
                     new_dir = Path(cur).name
                     break
             time.sleep(0.1)
+
+        poll_res = p.poll()
+        if poll_res is not None:
+            # Process died immediately. Get last few logs if possible.
+            with self.proc_lock:
+                err_msg = "".join(self.log_buffer[-10:])
+            response = {
+                "ok": False, 
+                "error": f"Trainer exited immediately with code {poll_res}. Check terminal output.",
+                "details": err_msg,
+                "args": args
+            }
+            self._send_json(response, code=400)
+            return
 
         if new_dir:
             try:

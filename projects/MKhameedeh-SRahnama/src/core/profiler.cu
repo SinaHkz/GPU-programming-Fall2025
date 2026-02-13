@@ -150,13 +150,23 @@ void Profiler::record_kernel_launch(const std::string& name, const void* kernel_
   const int warps_per_block = (threads_per_block + warp_size - 1) / warp_size;
   const int max_warps_per_sm = (prop.maxThreadsPerMultiProcessor > 0) ? (prop.maxThreadsPerMultiProcessor / warp_size)
                                                                      : 0;
-  const int active_warps_per_sm =
-      (occ_err == cudaSuccess && active_blocks_per_sm > 0) ? (active_blocks_per_sm * warps_per_block) : 0;
+
+  const int grid_blocks = static_cast<int>(grid.x * grid.y * grid.z);
+  // Total blocks that can physically reside on the GPU simultaneously for this kernel
+  const int max_resident_blocks_gpu = prop.multiProcessorCount * active_blocks_per_sm;
+  // Actual blocks that will reside (limited by grid size and resource availability)
+  const int actual_resident_blocks = std::min(grid_blocks, max_resident_blocks_gpu);
+  const int actual_resident_warps = actual_resident_blocks * warps_per_block;
+  const int max_capacity_warps_gpu = prop.multiProcessorCount * max_warps_per_sm;
+
   double occ_pct = 0.0;
-  if (max_warps_per_sm > 0) {
-    occ_pct =
-        100.0 * static_cast<double>(active_warps_per_sm) / static_cast<double>(max_warps_per_sm);
+  if (max_capacity_warps_gpu > 0) {
+    occ_pct = 100.0 * static_cast<double>(actual_resident_warps) / static_cast<double>(max_capacity_warps_gpu);
   }
+
+  // For CSV logging, we'll output the "achieved" metrics per SM
+  const double achieved_blocks_per_sm = static_cast<double>(actual_resident_blocks) / prop.multiProcessorCount;
+  const double active_warps_per_sm = static_cast<double>(actual_resident_warps) / prop.multiProcessorCount;
 
   std::ofstream csv(kernel_launches_csv_path_, std::ios::app);
   csv << unix_millis() << ",";
@@ -165,7 +175,7 @@ void Profiler::record_kernel_launch(const std::string& name, const void* kernel_
       << "," << grid.x << "," << grid.y << "," << grid.z << "," << block.x << "," << block.y << "," << block.z << ","
       << threads_per_block << "," << warps_per_block << "," << dynamic_shared_bytes << "," << ac.static_shared_bytes
       << "," << ac.regs_per_thread << "," << ac.local_bytes_per_thread << "," << ac.max_threads_per_block << ","
-      << active_blocks_per_sm << "," << active_warps_per_sm << "," << max_warps_per_sm << "," << occ_pct << "\n";
+      << achieved_blocks_per_sm << "," << active_warps_per_sm << "," << max_warps_per_sm << "," << occ_pct << "\n";
 }
 
 void Profiler::flush() {

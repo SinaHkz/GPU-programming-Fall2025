@@ -214,6 +214,10 @@ async function updateTerminal() {
         const span = document.createElement("span");
         span.textContent = line;
         terminal.appendChild(span);
+        // Ensure separation if lines don't end in newline
+        if (!line.endsWith('\n')) {
+          terminal.appendChild(document.createTextNode('\n'));
+        }
       }
       state.terminalOffset = data.offset;
       if (atBottom) {
@@ -396,31 +400,52 @@ async function wireLaunchControls() {
   const sel = document.getElementById("runSelect");
   if (btnStart) {
     btnStart.addEventListener("click", async () => {
-      const payload = {
-        exe: document.getElementById("cfgExe").value || "",
-        run_name: document.getElementById("cfgRunName").value || "",
-        arch: document.getElementById("cfgArch").value,
-        dataset: document.getElementById("cfgDataset").value,
-        epochs: Number(document.getElementById("cfgEpochs").value || 2),
-        batch: Number(document.getElementById("cfgBatch").value || 64),
-        lr: Number(document.getElementById("cfgLr").value || 0.01),
-        weight_decay: Number(document.getElementById("cfgWeightDecay").value || 0.0),
-        log_every: Number(document.getElementById("cfgLogEvery").value || 50),
-        eval_every: Number(document.getElementById("cfgEvalEvery").value || 200),
-        max_steps: Number(document.getElementById("cfgMaxSteps").value || 0),
-        norm_log_multiplier: Number(document.getElementById("cfgNormMult").value || 5),
-        profile_interval_ms: Number(document.getElementById("cfgProfileInterval").value || 200),
+      console.log("Start button clicked. Collecting payload...");
+      let payload = {};
+      try {
+        const getVal = (id, def) => {
+          const el = document.getElementById(id);
+          if (!el) console.warn(`Missing element: ${id}`);
+          return (el ? el.value : "") || def;
+        };
+        const getNum = (id, def) => Number(getVal(id, def));
+        const getCheck = (id) => {
+          const el = document.getElementById(id);
+          return el ? el.checked : false;
+        };
 
-        enable_h2d_pipeline: document.getElementById("cfgH2DPipeline").checked,
-        enable_log_sync_optimizations: document.getElementById("cfgLogSync").checked,
-        enable_async_checkpoint: document.getElementById("cfgAsyncCkpt").checked,
-        enable_cuda_graph_sgd: document.getElementById("cfgCudaGraph").checked,
-        enable_async_eval: document.getElementById("cfgAsyncEval").checked,
-        shuffle_train: !document.getElementById("cfgNoShuffle").checked,
+        payload = {
+          exe: getVal("cfgExe", ""),
+          run_name: getVal("cfgRunName", ""),
+          arch: getVal("cfgArch", "lenet"),
+          dataset: getVal("cfgDataset", "mnist"),
+          epochs: getNum("cfgEpochs", 2),
+          batch: getNum("cfgBatch", 64),
+          lr: getNum("cfgLr", 0.01),
+          weight_decay: getNum("cfgWeightDecay", 0.0),
+          log_every: getNum("cfgLogEvery", 50),
+          eval_every: getNum("cfgEvalEvery", 200),
+          max_steps: getNum("cfgMaxSteps", 0),
+          norm_log_multiplier: getNum("cfgNormMult", 5),
+          profile_interval_ms: getNum("cfgProfileInterval", 200),
 
-        benchmark_compare: document.getElementById("cfgBenchmark").checked,
-        benchmark_steps: Number(document.getElementById("cfgBenchSteps").value || 200),
-      };
+          enable_h2d_pipeline: getCheck("cfgH2DPipeline"),
+          enable_log_sync_optimizations: getCheck("cfgLogSync"),
+          enable_async_checkpoint: getCheck("cfgAsyncCkpt"),
+          enable_cuda_graph_sgd: getCheck("cfgCudaGraph"),
+          enable_async_eval: getCheck("cfgAsyncEval"),
+          shuffle_train: !getCheck("cfgNoShuffle"),
+
+          benchmark_compare: getCheck("cfgBenchmark"),
+          benchmark_steps: getNum("cfgBenchSteps", 200),
+        };
+      } catch (err) {
+        console.error("Failed to collect payload", err);
+        alert("Configuration Error: " + err.message);
+        return;
+      }
+
+      console.log("Sending payload:", payload);
 
       // Clear terminal for new run
       const terminal = document.getElementById("terminal");
@@ -428,15 +453,28 @@ async function wireLaunchControls() {
       state.terminalOffset = 0;
 
       try {
+        const btn = document.getElementById("btnStart");
+        const originalText = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = "Starting...";
+
         const r = await postJSON("/api/start", payload);
+        console.log("Start response:", r);
+
         await loadRuns();
         if (r.run_dir) {
           sel.value = r.run_dir;
           state.runDir = r.run_dir;
+          await loadRunInfo();
         }
       } catch (e) {
-        console.error(e);
-        alert(String(e));
+        console.error("Start failed", e);
+        alert("Launch Failed: " + String(e));
+      } finally {
+        const btn = document.getElementById("btnStart");
+        btn.disabled = false;
+        btn.innerHTML = '<i data-lucide="play" size="16"></i> Start';
+        lucide.createIcons();
       }
     });
   }
@@ -452,6 +490,12 @@ async function wireLaunchControls() {
 }
 
 async function main() {
+  window.addEventListener("error", (e) => {
+    console.error("Global JS Error:", e.message, e.filename, e.lineno);
+  });
+  window.addEventListener("unhandledrejection", (e) => {
+    console.error("Unhandled Promise Rejection:", e.reason);
+  });
   initTheme();
   await loadRuns();
 
@@ -465,13 +509,40 @@ async function main() {
   document.getElementById("fnFilter").addEventListener("input", (e) => {
     state.fnFilter = e.target.value || "";
   });
+  const btnRefresh = document.getElementById("btnRefresh");
+  if (btnRefresh) {
+    btnRefresh.addEventListener("click", async () => {
+      const btn = document.getElementById("btnRefresh");
+      btn.disabled = true;
+      try {
+        await loadRuns();
+        await tick();
+      } catch (e) {
+        console.error("Manual refresh failed", e);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  }
+
   await wireLaunchControls();
 
+  let tickCounter = 0;
   while (true) {
-    try {
-      await tick();
-    } catch (e) {
-      console.error(e);
+    const autoRefresh = document.getElementById("cfgAutoRefresh")?.checked ?? true;
+    if (autoRefresh) {
+      try {
+        await tick();
+
+        // Refresh run list every 10 ticks (approx 10s)
+        tickCounter++;
+        if (tickCounter >= 10) {
+          await loadRuns();
+          tickCounter = 0;
+        }
+      } catch (e) {
+        console.error(e);
+      }
     }
     await new Promise((r) => setTimeout(r, 1000));
   }

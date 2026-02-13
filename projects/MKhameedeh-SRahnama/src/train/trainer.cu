@@ -586,6 +586,7 @@ TrainSummary Trainer::run() {
         }
 
         metrics.write_point(p);
+        Profiler::instance().flush();
       }
 
       const uint64_t eval_every = (cfg_.eval_every <= 0) ? 0ULL : static_cast<uint64_t>(cfg_.eval_every);

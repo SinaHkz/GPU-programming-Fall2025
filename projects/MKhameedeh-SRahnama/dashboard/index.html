@@ -32,10 +32,17 @@
                 <h1>GPU Trainer Pro</h1>
             </div>
 
-            <div class="section-label">Active Run</div>
             <div class="field">
-                <label for="runSelect">Select Run Session</label>
+                <div class="flex" style="justify-content: space-between; align-items: flex-end; margin-bottom: 4px;">
+                    <label for="runSelect" style="margin-bottom: 0;">Select Run Session</label>
+                    <button id="btnRefresh" class="btn-ghost" style="padding: 2px 8px; font-size: 11px;">
+                        <i data-lucide="refresh-cw" size="12"></i> Refresh
+                    </button>
+                </div>
                 <select id="runSelect"></select>
+                <label class="toggle-label" style="margin-top: 8px; font-size: 11px; opacity: 0.8;">
+                    <input id="cfgAutoRefresh" type="checkbox" checked /> Auto-refresh Dashboard
+                </label>
             </div>
 
             <div class="section-label">Launch New Run</div>
@@ -95,11 +102,11 @@
                         <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 0;">
                             <div class="field">
                                 <label>Log Every</label>
-                                <input id="cfgLogEvery" type="number" value="50" />
+                                <input id="cfgLogEvery" type="number" value="1" />
                             </div>
                             <div class="field">
                                 <label>Eval Every</label>
-                                <input id="cfgEvalEvery" type="number" value="200" />
+                                <input id="cfgEvalEvery" type="number" value="1" />
                             </div>
                         </div>
                         <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 0;">
