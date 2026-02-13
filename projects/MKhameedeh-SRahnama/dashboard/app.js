@@ -74,6 +74,10 @@ function fmtNum(x, digits = 3) {
   return v.toFixed(digits);
 }
 
+function getStyle(prop) {
+    return getComputedStyle(document.documentElement).getPropertyValue(prop).trim();
+}
+
 function plotLine(divId, title, xs, ys, xTitle, yTitle) {
   const div = document.getElementById(divId);
   if (!div) return;
@@ -85,25 +89,27 @@ function plotLine(divId, title, xs, ys, xTitle, yTitle) {
   if (!div.__uplot) {
     const theme = document.documentElement.getAttribute("data-theme") || "dark";
     const isLight = theme === "light";
-    const axisColor = isLight ? "rgba(17,24,39,.55)" : "rgba(232,236,255,.55)";
-    const gridColor = isLight ? "rgba(17,24,39,.10)" : "rgba(232,236,255,.10)";
-    const textColor = isLight ? "#111827" : "#e8ecff";
-    const lineColor = isLight ? "#0ea5e9" : "#58d6ff";
+    
+    // Use CSS variables for chart colors
+    const axisColor = getStyle('--muted') || (isLight ? "rgba(17,24,39,.55)" : "rgba(232,236,255,.55)");
+    const gridColor = getStyle('--border') || (isLight ? "rgba(17,24,39,.10)" : "rgba(232,236,255,.10)");
+    const textColor = getStyle('--text') || (isLight ? "#111827" : "#e8ecff");
+    const lineColor = getStyle('--accent') || (isLight ? "#0ea5e9" : "#58d6ff");
 
     const opts = {
       title,
       width: div.clientWidth || 600,
-      height: div.clientHeight || 300,
+      height: div.clientHeight || 320,
       padding: [12, 14, 38, 54],
       cursor: { drag: { x: true, y: false } },
       scales: { x: { time: false }, y: { auto: true } },
       axes: [
-        { stroke: axisColor, grid: { stroke: gridColor }, label: xTitle, font: "12px system-ui" },
-        { stroke: axisColor, grid: { stroke: gridColor }, label: yTitle, font: "12px system-ui" },
+        { stroke: axisColor, grid: { stroke: gridColor }, label: xTitle, font: "12px Inter", labelFont: "12px Inter", ticks: {stroke: axisColor} },
+        { stroke: axisColor, grid: { stroke: gridColor }, label: yTitle, font: "12px Inter", labelFont: "12px Inter", ticks: {stroke: axisColor} },
       ],
       series: [
         { label: xTitle },
-        { label: yTitle, stroke: lineColor, width: 2 },
+        { label: yTitle, stroke: lineColor, width: 2, points: { show: false } },
       ],
     };
     div.__uplot = new window.uPlot(opts, [xs, ys], div);
@@ -112,7 +118,7 @@ function plotLine(divId, title, xs, ys, xTitle, yTitle) {
       const u = div.__uplot;
       if (!u) return;
       const w = div.clientWidth || 600;
-      const h = div.clientHeight || 300;
+      const h = div.clientHeight || 320;
       u.setSize({ width: w, height: h });
     });
     ro.observe(div);
@@ -181,7 +187,7 @@ function updateFnTable(rows, q) {
     const total_mb_str = total_mb > 0 ? fmtNum(total_mb, 2) : "-";
     const avg_gbps_str = r.avg_gbps > 0 ? fmtNum(r.avg_gbps, 2) : "-";
     const tr = document.createElement("tr");
-    tr.innerHTML = `<td>${r.kind}</td><td>${r.name}</td><td>${r.calls}</td><td>${fmtNum(
+    tr.innerHTML = `<td>${r.kind}</td><td style="font-family:monospace; font-size:12px;">${r.name}</td><td>${r.calls}</td><td>${fmtNum(
       r.total_ms,
       2
     )}</td><td>${fmtNum(r.avg_ms, 4)}</td><td>${fmtNum(r.max_ms, 4)}</td><td>${total_mb_str}</td><td>${avg_gbps_str}</td>`;
@@ -216,18 +222,30 @@ async function loadRunInfo() {
   document.getElementById("runDir").textContent = info.run_dir;
   const cfg = info.config || {};
   const dev = info.device || {};
-  const txt =
-    `arch=${cfg.arch ?? "?"} dataset=${cfg.dataset ?? "?"} batch=${cfg.batch_size ?? "?"} lr=${cfg.lr ?? "?"}` +
-    ` | device=${dev.name ?? "?"} sm=${dev.sm_count ?? "?"} mem_bytes=${dev.mem_total_bytes ?? "?"}` +
-    ` | profile_interval_ms=${cfg.profile_interval_ms ?? "?"}`;
-  document.getElementById("runInfo").textContent = txt;
+  
+  const tags = [
+    {label: 'arch', val: cfg.arch},
+    {label: 'dataset', val: cfg.dataset},
+    {label: 'batch', val: cfg.batch_size},
+    {label: 'lr', val: cfg.lr},
+    {label: 'device', val: dev.name},
+    {label: 'sm', val: dev.sm_count}
+  ];
+
+  const html = tags.filter(t => t.val !== undefined && t.val !== null)
+    .map(t => `<div class="badge">${t.label}: <strong>${t.val}</strong></div>`)
+    .join('');
+    
+  document.getElementById("runInfo").innerHTML = html;
 }
 
 async function updateProcStatus() {
   const st = await fetchJSON("/api/proc_status");
   const el = document.getElementById("procStatus");
   if (!el) return;
-  el.textContent = st.running ? `running (pid=${st.pid})` : "idle";
+  
+  const icon = st.running ? '<span class="status-pill status-running"></span>' : '<span class="status-pill status-idle"></span>';
+  el.innerHTML = `<div class="flex" style="justify-content:center;">${icon} ${st.running ? `Running (PID ${st.pid})` : "System Idle"}</div>`;
 }
 
 async function tick() {
