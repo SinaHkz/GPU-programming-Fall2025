@@ -101,6 +101,7 @@ int main(int argc, char** argv) {
       } else {
         std::cout << "BENCHMARK_SPEEDUP unavailable (insufficient steps)\n";
       }
+      std::cout.flush();
     } else {
       (void)run_once(cfg);
     }

@@ -124,6 +124,7 @@ class SgdGraphRunner {
         captured_ = true;
       } else {
         failed_ = true;
+        (void)cudaGetLastError();
         Logger::instance().warn("CUDA graph capture for SGD disabled; using normal kernel launches.");
         for (auto p : params) sgd_step(*p.w, *p.grad, lr, weight_decay);
         return;

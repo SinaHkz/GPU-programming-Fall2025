@@ -77,7 +77,7 @@ def _resolve_data_dir(data_dir: str) -> Path:
     return p
 
 
-def _ensure_dataset_ready(dataset: str, data_dir: str) -> None:
+def _ensure_dataset_ready(dataset: str, data_dir: str, log_fn=None) -> None:
     ds = (dataset or "").lower()
     base = _resolve_data_dir(data_dir)
     if ds == "mnist":
@@ -89,17 +89,27 @@ def _ensure_dataset_ready(dataset: str, data_dir: str) -> None:
             root / "t10k-labels-idx1-ubyte",
         ]
         if all(p.exists() for p in required):
+            if log_fn: log_fn(f"[dashboard] Dataset '{ds}' already present.\n")
             return
         cmd = [sys.executable, str(Path(__file__).parent / "download_mnist.py"), "--out", str(base)]
     elif ds == "cifar10":
         root = base / "cifar10" / "cifar-10-batches-bin"
         if root.exists():
+            if log_fn: log_fn(f"[dashboard] Dataset '{ds}' already present.\n")
             return
         cmd = [sys.executable, str(Path(__file__).parent / "download_cifar10.py"), "--out", str(base)]
     else:
         return
 
-    subprocess.run(cmd, cwd=str(Path(__file__).parent.parent), check=True)
+    if log_fn: log_fn(f"[dashboard] Downloading dataset '{ds}'...\n")
+    proc = subprocess.Popen(cmd, cwd=str(Path(__file__).parent.parent),
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+    for line in proc.stdout:
+        if log_fn: log_fn(f"[download] {line}")
+    proc.wait()
+    if proc.returncode != 0:
+        raise RuntimeError(f"Download script exited with code {proc.returncode}")
+    if log_fn: log_fn(f"[dashboard] Dataset '{ds}' ready.\n")
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -110,6 +120,8 @@ class Handler(BaseHTTPRequestHandler):
     proc_lock = threading.Lock()
     proc: subprocess.Popen | None = None
     log_buffer = []
+    last_exit_code: int | None = None
+    last_status: str = "idle"  # idle | running | stopped | error | completed
 
     def _send_json(self, payload, code=200):
         body = json.dumps(payload).encode("utf-8")
@@ -132,9 +144,9 @@ class Handler(BaseHTTPRequestHandler):
 
         if u.path == "/api/terminal":
             offset = int((qs.get("offset") or ["0"])[0])
-            with self.proc_lock:
-                logs = self.log_buffer[offset:]
-                new_offset = len(self.log_buffer)
+            with Handler.proc_lock:
+                logs = Handler.log_buffer[offset:]
+                new_offset = len(Handler.log_buffer)
             self._send_json({"logs": logs, "offset": new_offset})
             return
 
@@ -167,10 +179,8 @@ class Handler(BaseHTTPRequestHandler):
             config = _read_json(run_dir / "config.json")
             # Try to parse speedup from log_buffer if this is the active run
             speedup_info = {}
-            with self.proc_lock:
-                search_buffer = self.log_buffer
-                # if not active, or doesn't match, maybe we should search a file?
-                # For now, let's just look at the live buffer.
+            with Handler.proc_lock:
+                search_buffer = list(Handler.log_buffer)
             
             for line in reversed(search_buffer):
                 if "BENCHMARK_SPEEDUP" in line:
@@ -209,11 +219,19 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if u.path == "/api/proc_status":
-            with self.proc_lock:
-                p = self.proc
+            with Handler.proc_lock:
+                p = Handler.proc
                 running = p is not None and p.poll() is None
                 pid = p.pid if p is not None else None
-            self._send_json({"running": running, "pid": pid})
+                status = Handler.last_status
+                exit_code = Handler.last_exit_code
+                # Update status if process just finished
+                if p is not None and not running and status == "running":
+                    exit_code = p.returncode
+                    Handler.last_exit_code = exit_code
+                    Handler.last_status = "completed" if exit_code == 0 else "error"
+                    status = Handler.last_status
+            self._send_json({"running": running, "pid": pid, "status": status, "exit_code": exit_code})
             return
 
         if u.path == "/" or u.path == "/index.html":
@@ -254,10 +272,11 @@ class Handler(BaseHTTPRequestHandler):
             line = pipe.readline()
             if not line:
                 break
-            with self.proc_lock:
-                self.log_buffer.append(line)
-                if len(self.log_buffer) > 5000:
-                    self.log_buffer.pop(0)
+            print(f"Captured: {line.strip()}")
+            with Handler.proc_lock:
+                Handler.log_buffer.append(line)
+                if len(Handler.log_buffer) > 5000:
+                    Handler.log_buffer.pop(0)
 
     def do_POST(self):
         print(f"POST {self.path}")
@@ -275,9 +294,11 @@ class Handler(BaseHTTPRequestHandler):
             payload = {}
 
         if u.path == "/api/stop":
-            with self.proc_lock:
-                p = self.proc
-                self.proc = None
+            with Handler.proc_lock:
+                p = Handler.proc
+                Handler.proc = None
+                Handler.last_status = "stopped"
+                Handler.last_exit_code = None
             if p is not None and p.poll() is None:
                 try:
                     p.terminate()
@@ -287,11 +308,13 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         # /api/start
-        with self.proc_lock:
-            if self.proc is not None and self.proc.poll() is None:
+        with Handler.proc_lock:
+            if Handler.proc is not None and Handler.proc.poll() is None:
                 self._send_json({"error": "process already running"}, code=409)
                 return
-            self.log_buffer = []
+            Handler.log_buffer.clear()
+            Handler.last_status = "running"
+            Handler.last_exit_code = None
 
         exe = payload.get("exe") or ""
         if not exe:
@@ -338,9 +361,18 @@ class Handler(BaseHTTPRequestHandler):
         else:
             no_shuffle = bool(payload.get("no_shuffle") or False)
 
+        def _log_to_terminal(msg):
+            with Handler.proc_lock:
+                Handler.log_buffer.append(msg)
+                if len(Handler.log_buffer) > 5000:
+                    Handler.log_buffer.pop(0)
+            print(msg.rstrip())
+
         try:
-            _ensure_dataset_ready(dataset, data_dir)
+            _ensure_dataset_ready(dataset, data_dir, log_fn=_log_to_terminal)
         except Exception as e:
+            _log_to_terminal(f"[dashboard] ERROR: dataset download failed: {e}\n")
+            Handler.last_status = "error"
             self._send_json({"error": f"dataset download failed: {e}"}, code=500)
             return
 
@@ -401,9 +433,9 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"error": str(e), "args": args}, code=500)
             return
 
-        with self.proc_lock:
-            self.proc = p
-            self.log_buffer.clear() # Clear logs for new run
+        with Handler.proc_lock:
+            Handler.proc = p
+            Handler.log_buffer.clear() # Clear logs for new run
         
         threading.Thread(target=self._read_logs, args=(p.stdout,), daemon=True).start()
 
@@ -423,8 +455,10 @@ class Handler(BaseHTTPRequestHandler):
         poll_res = p.poll()
         if poll_res is not None:
             # Process died immediately. Get last few logs if possible.
-            with self.proc_lock:
-                err_msg = "".join(self.log_buffer[-10:])
+            with Handler.proc_lock:
+                err_msg = "".join(Handler.log_buffer[-10:])
+                Handler.last_status = "error"
+                Handler.last_exit_code = poll_res
             response = {
                 "ok": False, 
                 "error": f"Trainer exited immediately with code {poll_res}. Check terminal output.",

@@ -124,9 +124,7 @@ function plotLine(divId, title, xs, ys, xTitle, yTitle) {
     ro.observe(div);
     div.__ro = ro;
   } else {
-    div.__uplot.setData([xs, ys], false);
-    div.__uplot.setScale("x", { auto: true });
-    div.__uplot.setScale("y", { auto: true });
+    div.__uplot.setData([xs, ys], true);
   }
 }
 
@@ -237,10 +235,15 @@ async function loadRuns() {
   const sel = document.getElementById("runSelect");
   setOptions(sel, runs, true);
 
-  const info = await fetchJSON("/api/run_info");
-  const defaultName = (info.run_dir || "").split(/[\\/]/).pop();
-  if (defaultName && runs.includes(defaultName)) sel.value = defaultName;
-  state.runDir = sel.value || defaultName || runs[0] || "";
+  // Only apply server default on first load; preserve user's selection on refreshes
+  if (!state.runDir || !runs.includes(state.runDir)) {
+    const info = await fetchJSON("/api/run_info");
+    const defaultName = (info.run_dir || "").split(/[\\/]/).pop();
+    if (defaultName && runs.includes(defaultName)) sel.value = defaultName;
+    state.runDir = sel.value || defaultName || runs[0] || "";
+  } else {
+    sel.value = state.runDir;
+  }
 }
 
 async function loadRunInfo() {
@@ -282,16 +285,26 @@ async function loadRunInfo() {
 
 async function updateProcStatus() {
   const st = await fetchJSON("/api/proc_status");
-  const el = document.getElementById("procStatus");
-  if (!el) return;
+  const sidebarEl = document.getElementById("procStatus");
+  const headerEl = document.getElementById("headerStatus");
 
-  const icon = st.running ? '<span class="status-pill status-running"></span>' : '<span class="status-pill status-idle"></span>';
-  el.innerHTML = `<div class="flex" style="justify-content:center;">${icon} ${st.running ? `Running (PID ${st.pid})` : "System Idle"}</div>`;
+  const statusMap = {
+    running: { label: `Running (PID ${st.pid})`, cls: 'status-running', icon: 'play' },
+    completed: { label: 'Completed', cls: 'status-completed', icon: 'check-circle' },
+    stopped: { label: 'Stopped', cls: 'status-stopped', icon: 'square' },
+    error: { label: `Error (exit ${st.exit_code})`, cls: 'status-error', icon: 'alert-triangle' },
+    idle: { label: 'Idle', cls: 'status-idle', icon: 'circle' },
+  };
 
-  if (!st.running) {
-    // If not running, we can reset terminal offset for next run if needed, 
-    // but usually we want to see the last logs.
-  }
+  const info = statusMap[st.status] || statusMap.idle;
+
+  const badgeHTML = `<span class="status-badge ${info.cls}"><span class="status-dot"></span><i data-lucide="${info.icon}" size="14"></i> ${info.label}</span>`;
+
+  if (sidebarEl) sidebarEl.innerHTML = badgeHTML;
+  if (headerEl) headerEl.innerHTML = badgeHTML;
+
+  // Re-render lucide icons in the newly added HTML
+  try { lucide.createIcons(); } catch { }
 }
 
 async function tick() {

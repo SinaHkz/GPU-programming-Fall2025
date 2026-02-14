@@ -15,7 +15,7 @@
     </script>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>GPU Trainer Pro | Dashboard</title>
+    <title>CudaNN platform | Dashboard</title>
     <link rel="stylesheet" href="/vendor/uPlot.min.css" />
     <link rel="stylesheet" href="/styles.css" />
     <!-- Lucide Icons -->
@@ -29,7 +29,7 @@
                 <div class="brand-icon">
                     <i data-lucide="zap" stroke="#fff"></i>
                 </div>
-                <h1>GPU Trainer Pro</h1>
+                <h1>CudaNN platform</h1>
             </div>
 
             <div class="field">
@@ -106,7 +106,7 @@
                             </div>
                             <div class="field">
                                 <label>Eval Every</label>
-                                <input id="cfgEvalEvery" type="number" value="1" />
+                                <input id="cfgEvalEvery" type="number" value="25" />
                             </div>
                         </div>
                         <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 0;">
@@ -121,7 +121,7 @@
                         </div>
                         <div class="field">
                             <label>Profile Interval (ms)</label>
-                            <input id="cfgProfileInterval" type="number" value="200" />
+                            <input id="cfgProfileInterval" type="number" value="1" />
                         </div>
                     </details>
 
@@ -172,7 +172,8 @@
                     <h2 style="margin: 0; font-size: 24px;">Metrics Dashboard</h2>
                     <div id="runInfo" class="run-meta" style="margin-top: 8px;"></div>
                 </div>
-                <div class="flex">
+                <div class="flex" style="gap: 12px;">
+                    <div id="headerStatus"></div>
                     <div class="badge">Root: <code id="runsRoot"></code></div>
                     <div class="badge">Active: <code id="runDir"></code></div>
                 </div>
