@@ -191,6 +191,34 @@ input {
   width: 100%;
   outline: none;
   transition: var(--transition);
+  color-scheme: dark;
+}
+
+[data-theme="light"] select,
+[data-theme="light"] input {
+  color-scheme: light;
+}
+
+select option {
+  background: #0a0d14;
+  color: #f0f2f5;
+}
+
+select option:checked,
+select option:hover {
+  background: #1e293b;
+  color: #f0f2f5;
+}
+
+[data-theme="light"] select option {
+  background: #ffffff;
+  color: #0f172a;
+}
+
+[data-theme="light"] select option:checked,
+[data-theme="light"] select option:hover {
+  background: #e2e8f0;
+  color: #0f172a;
 }
 
 select:focus,
@@ -340,6 +368,7 @@ tr:hover td {
   border-color: rgba(16, 185, 129, 0.3);
   color: var(--success);
 }
+
 .status-badge.status-running .status-dot {
   background: var(--success);
   box-shadow: 0 0 8px var(--success);
@@ -351,6 +380,7 @@ tr:hover td {
   border-color: rgba(56, 189, 248, 0.3);
   color: var(--accent);
 }
+
 .status-badge.status-completed .status-dot {
   background: var(--accent);
   box-shadow: 0 0 8px var(--accent);
@@ -361,6 +391,7 @@ tr:hover td {
   border-color: rgba(245, 158, 11, 0.3);
   color: var(--warning);
 }
+
 .status-badge.status-stopped .status-dot {
   background: var(--warning);
 }
@@ -370,6 +401,7 @@ tr:hover td {
   border-color: rgba(239, 68, 68, 0.3);
   color: var(--danger);
 }
+
 .status-badge.status-error .status-dot {
   background: var(--danger);
   box-shadow: 0 0 8px var(--danger);
@@ -380,8 +412,17 @@ tr:hover td {
 }
 
 @keyframes statusPulse {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.5; transform: scale(1.4); }
+
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.5;
+    transform: scale(1.4);
+  }
 }
 
 details summary {
