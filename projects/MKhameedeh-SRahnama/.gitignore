@@ -1,0 +1,8 @@
+build/
+runs/
+data/
+*.ncu-rep
+*.nsys-rep
+*.log
+*.tmp
+
