@@ -29,75 +29,78 @@ int main(int argc, char** argv) {
     int steps_per_frame = 20;  
     int nIters = 100;          
 
-    int bytes_pos = nBodies * sizeof(float4);
-    int bytes_vel = nBodies * sizeof(float3);
+    // Mem
+    int b_pos = nBodies * sizeof(float4);
+    int b_vel = nBodies * sizeof(float3);
     
-    float4* p = (float4*)malloc(bytes_pos);
-    float3* v = (float3*)malloc(bytes_vel);
+    float4* p = (float4*)malloc(b_pos);
+    float3* v = (float3*)malloc(b_vel);
 
     if (export_data) {
         std::cout << "Exporting stable trajectory data to trajectory.csv...\n";
-        std::ofstream outfile("trajectory.csv");
-        outfile << "Step,BodyID,X,Y,Mass\n";
+        std::ofstream out("trajectory.csv");
+        out << "Step,BodyID,X,Y,Mass\n";
 
         initSolarSystem(p, v, nBodies);
 
-        for (int frame = 0; frame < total_frames; frame++) {
+        // Export
+        for (int f = 0; f < total_frames; f++) {
             runSimulationGPU_Tiled(p, v, dt, nBodies, steps_per_frame); 
-            savePositionsToCSV(outfile, p, nBodies, frame);
-            if (frame % 50 == 0) std::cout << "Saved frame " << frame << " / " << total_frames << "\n";
+            savePositionsToCSV(out, p, nBodies, f);
+            if (f % 50 == 0) std::cout << "Saved frame " << f << " / " << total_frames << "\n";
         }
-        outfile.close();
+        out.close();
         std::cout << "Export complete! Run the Python visualizer to see the orbits.\n";
 
     } else {
-        // --- THE ULTIMATE BENCHMARK SUITE ---
+        // Benchmark
         std::cout << "Bodies: " << nBodies << " | Iterations: " << nIters << "\n";
         std::cout << "----------------------------------------\n";
 
-        // 1. CPU BASELINE
+        // CPU
         initSolarSystem(p, v, nBodies);
-        auto start_cpu = std::chrono::high_resolution_clock::now();
-        for (int step = 0; step < nIters; step++) {
+        auto t1 = std::chrono::high_resolution_clock::now();
+        for (int i = 0; i < nIters; i++) {
             bodyForceCPU(p, v, dt, nBodies);
             integratePositionsCPU(p, v, dt, nBodies);
         }
-        auto end_cpu = std::chrono::high_resolution_clock::now();
-        double cpu_time = std::chrono::duration<double>(end_cpu - start_cpu).count();
-        std::cout << "1. CPU Time:          " << cpu_time << " s\n";
+        auto t2 = std::chrono::high_resolution_clock::now();
+        double t_cpu = std::chrono::duration<double>(t2 - t1).count();
+        std::cout << "1. CPU Time:          " << t_cpu << " s\n";
 
-        // 2. GPU NAIVE
+        // Naive
         initSolarSystem(p, v, nBodies);
-        auto start_naive = std::chrono::high_resolution_clock::now();
+        t1 = std::chrono::high_resolution_clock::now();
         runSimulationGPU_Naive(p, v, dt, nBodies, nIters);
-        auto end_naive = std::chrono::high_resolution_clock::now();
-        double naive_time = std::chrono::duration<double>(end_naive - start_naive).count();
-        std::cout << "2. GPU Naive Time:    " << naive_time << " s\n";
+        t2 = std::chrono::high_resolution_clock::now();
+        double t_naive = std::chrono::duration<double>(t2 - t1).count();
+        std::cout << "2. GPU Naive Time:    " << t_naive << " s\n";
 
-        // 3. GPU TILED
+        // Tiled
         initSolarSystem(p, v, nBodies);
-        auto start_tiled = std::chrono::high_resolution_clock::now();
+        t1 = std::chrono::high_resolution_clock::now();
         runSimulationGPU_Tiled(p, v, dt, nBodies, nIters);
-        auto end_tiled = std::chrono::high_resolution_clock::now();
-        double tiled_time = std::chrono::duration<double>(end_tiled - start_tiled).count();
-        std::cout << "3. GPU Tiled Time:    " << tiled_time << " s\n";
+        t2 = std::chrono::high_resolution_clock::now();
+        double t_tiled = std::chrono::duration<double>(t2 - t1).count();
+        std::cout << "3. GPU Tiled Time:    " << t_tiled << " s\n";
 
-        // 4. GPU STREAMED
+        // Streamed
         initSolarSystem(p, v, nBodies);
-        auto start_stream = std::chrono::high_resolution_clock::now();
+        t1 = std::chrono::high_resolution_clock::now();
         runSimulationGPU_Streamed(p, v, dt, nBodies, nIters);
-        auto end_stream = std::chrono::high_resolution_clock::now();
-        double stream_time = std::chrono::duration<double>(end_stream - start_stream).count();
-        std::cout << "4. GPU Streamed Time: " << stream_time << " s\n";
+        t2 = std::chrono::high_resolution_clock::now();
+        double t_stream = std::chrono::duration<double>(t2 - t1).count();
+        std::cout << "4. GPU Streamed Time: " << t_stream << " s\n";
         std::cout << "----------------------------------------\n";
 
-        // SPEEDUPS
-        std::cout << "SPEEDUP (Naive vs CPU):    " << (cpu_time / naive_time) << "x\n";
-        std::cout << "SPEEDUP (Tiled vs CPU):    " << (cpu_time / tiled_time) << "x\n";
-        std::cout << "SPEEDUP (Streamed vs CPU): " << (cpu_time / stream_time) << "x\n";
+        // Speedup
+        std::cout << "SPEEDUP (Naive vs CPU):    " << (t_cpu / t_naive) << "x\n";
+        std::cout << "SPEEDUP (Tiled vs CPU):    " << (t_cpu / t_tiled) << "x\n";
+        std::cout << "SPEEDUP (Streamed vs CPU): " << (t_cpu / t_stream) << "x\n";
         std::cout << "----------------------------------------\n";
     }
 
+    // Cleanup
     free(p);
     free(v);
     return 0;

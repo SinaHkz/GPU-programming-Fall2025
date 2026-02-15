@@ -1,235 +1,206 @@
-#include "types.h"
-#include <cuda_runtime.h>
-#include <cmath>
-#include <iostream>
+#include "physics.h"
 
-const float G = 1.0f;
-const float SOFTENING = 1e-9f;
-
-
-
+// Naive
 __global__ void bodyForceKernelNaive(float4* p, float3* v, float dt, int n) {
-    
-    int i = blockDim.x * blockIdx.x + threadIdx.x;
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= n) return;
 
-    float Fx = 0.0f;
-    float Fy = 0.0f;
-    float Fz = 0.0f;
-    
-    
-    float4 myPos = p[i]; 
+    float fx = 0.0f;
+    float fy = 0.0f;
+    float fz = 0.0f;
 
+    // Math
     for (int j = 0; j < n; j++) {
+        float dx = p[j].x - p[i].x;
+        float dy = p[j].y - p[i].y;
+        float dz = p[j].z - p[i].z;
         
-        float4 otherPos = p[j]; 
-        
-        float dx = otherPos.x - myPos.x;
-        float dy = otherPos.y - myPos.y;
-        float dz = otherPos.z - myPos.z;
-
-        float distSqr = dx*dx + dy*dy + dz*dz + SOFTENING;
-        
-
-        float invDist = rsqrtf(distSqr); 
+        float distSqr = dx*dx + dy*dy + dz*dz + 1e-9f; 
+        float invDist = rsqrtf(distSqr);
         float invDist3 = invDist * invDist * invDist;
 
-        float force_magnitude = G * otherPos.w * invDist3;
-
-        Fx += dx * force_magnitude;
-        Fy += dy * force_magnitude;
-        Fz += dz * force_magnitude;
-    }
-
-
-    v[i].x += Fx * dt;
-    v[i].y += Fy * dt;
-    v[i].z += Fz * dt;
-}
-
-__global__ void integratePositionsKernel(float4* p, float3* v, float dt, int n) {
-    int i = blockDim.x * blockIdx.x + threadIdx.x;
-    if (i >= n) return;
-
-    p[i].x += v[i].x * dt;
-    p[i].y += v[i].y * dt;
-    p[i].z += v[i].z * dt;
-}
-
-
-
-void runSimulationGPU_Naive(float4* h_p, float3* h_v, float dt, int nBodies, int nIters) {
-    int bytes_pos = nBodies * sizeof(float4);
-    int bytes_vel = nBodies * sizeof(float3);
-
-    float4 *d_p;
-    float3 *d_v;
-
-    
-    cudaMalloc(&d_p, bytes_pos);
-    cudaMalloc(&d_v, bytes_vel);
-
-    
-    cudaMemcpy(d_p, h_p, bytes_pos, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_v, h_v, bytes_vel, cudaMemcpyHostToDevice);
-
-    
-    int blockSize = 256;
-    int gridSize = (nBodies + blockSize - 1) / blockSize;
-
-    
-    for (int step = 0; step < nIters; step++) {
-        bodyForceKernelNaive<<<gridSize, blockSize>>>(d_p, d_v, dt, nBodies);
-        integratePositionsKernel<<<gridSize, blockSize>>>(d_p, d_v, dt, nBodies);
-    }
-    
-   
-    cudaDeviceSynchronize();
-
-  
-    cudaMemcpy(h_p, d_p, bytes_pos, cudaMemcpyDeviceToHost);
-    cudaMemcpy(h_v, d_v, bytes_vel, cudaMemcpyDeviceToHost);
-
-   
-    cudaFree(d_p);
-    cudaFree(d_v);
-}
-
-
-
-__global__ void bodyForceKernelTiled(float4* p, float3* v, float dt, int n) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    
-   
-    __shared__ float4 sharedPos[256]; 
-    
-    float4 myPos;
-    float3 accel = {0.0f, 0.0f, 0.0f};
-
-    if (i < n) {
-        myPos = p[i];
-    }
-
-    
-    for (int tile = 0; tile < gridDim.x; tile++) {
+        float F = p[j].w * invDist3;
         
-        // 1. COOPERATIVE LOAD: Each thread loads exactly one body into the shared tile
-        int idx = tile * blockDim.x + threadIdx.x;
-        if (idx < n) {
-            sharedPos[threadIdx.x] = p[idx];
-        } else {
-            
-            sharedPos[threadIdx.x] = {0.0f, 0.0f, 0.0f, 0.0f}; 
-        }
+        fx += dx * F;
+        fy += dy * F;
+        fz += dz * F;
+    }
 
-       
+    // Velocity
+    v[i].x += dt * fx;
+    v[i].y += dt * fy;
+    v[i].z += dt * fz;
+}
+
+// Tiled
+__global__ void bodyForceKernelTiled(float4* p, float3* v, float dt, int n) {
+    extern __shared__ float4 sh_p[];
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    int ti = threadIdx.x;
+    
+    float4 my_p;
+    if (i < n) my_p = p[i];
+
+    float fx = 0.0f;
+    float fy = 0.0f;
+    float fz = 0.0f;
+
+    // Tiles
+    for (int t = 0; t < gridDim.x; t++) {
+        int idx = t * blockDim.x + ti;
+        
+        // Load
+        if (idx < n) {
+            sh_p[ti] = p[idx];
+        } else {
+            sh_p[ti] = {0.0f, 0.0f, 0.0f, 0.0f};
+        }
         __syncthreads();
 
-        // 2. COMPUTE: Now all threads calculate forces against the fast shared memory
+        // Math
         if (i < n) {
-            
-            #pragma unroll 32
+            #pragma unroll
             for (int j = 0; j < blockDim.x; j++) {
-                float4 otherPos = sharedPos[j];
+                float dx = sh_p[j].x - my_p.x;
+                float dy = sh_p[j].y - my_p.y;
+                float dz = sh_p[j].z - my_p.z;
                 
-                float dx = otherPos.x - myPos.x;
-                float dy = otherPos.y - myPos.y;
-                float dz = otherPos.z - myPos.z;
-
-                float distSqr = dx*dx + dy*dy + dz*dz + SOFTENING;
+                float distSqr = dx*dx + dy*dy + dz*dz + 1e-9f; 
                 float invDist = rsqrtf(distSqr);
                 float invDist3 = invDist * invDist * invDist;
 
-                float force_magnitude = G * otherPos.w * invDist3;
-
-                accel.x += dx * force_magnitude;
-                accel.y += dy * force_magnitude;
-                accel.z += dz * force_magnitude;
+                float F = sh_p[j].w * invDist3;
+                
+                fx += dx * F;
+                fy += dy * F;
+                fz += dz * F;
             }
         }
-
-        
         __syncthreads();
     }
 
-    // 3. UPDATE: Write the final velocity back to global memory
+    // Velocity
     if (i < n) {
-        v[i].x += accel.x * dt;
-        v[i].y += accel.y * dt;
-        v[i].z += accel.z * dt;
+        v[i].x += dt * fx;
+        v[i].y += dt * fy;
+        v[i].z += dt * fz;
     }
 }
 
+// Update
+__global__ void integratePositionsKernel(float4* p, float3* v, float dt, int n) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) {
+        p[i].x += v[i].x * dt;
+        p[i].y += v[i].y * dt;
+        p[i].z += v[i].z * dt;
+    }
+}
 
-void runSimulationGPU_Tiled(float4* h_p, float3* h_v, float dt, int nBodies, int nIters) {
-    int bytes_pos = nBodies * sizeof(float4);
-    int bytes_vel = nBodies * sizeof(float3);
+// RunNaive
+void runSimulationGPU_Naive(float4* h_p, float3* h_v, float dt, int n, int iters) {
+    int b_p = n * sizeof(float4);
+    int b_v = n * sizeof(float3);
 
     float4 *d_p;
     float3 *d_v;
 
-    cudaMalloc(&d_p, bytes_pos);
-    cudaMalloc(&d_v, bytes_vel);
+    // Mem
+    cudaMalloc(&d_p, b_p);
+    cudaMalloc(&d_v, b_v);
+    cudaMemcpy(d_p, h_p, b_p, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_v, h_v, b_v, cudaMemcpyHostToDevice);
 
-    cudaMemcpy(d_p, h_p, bytes_pos, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_v, h_v, bytes_vel, cudaMemcpyHostToDevice);
+    int block = 256;
+    int grid = (n + block - 1) / block;
 
-    int blockSize = 256;
-    int gridSize = (nBodies + blockSize - 1) / blockSize;
-
-    for (int step = 0; step < nIters; step++) {
-        bodyForceKernelTiled<<<gridSize, blockSize>>>(d_p, d_v, dt, nBodies);
-        integratePositionsKernel<<<gridSize, blockSize>>>(d_p, d_v, dt, nBodies);
+    // Loop
+    for (int step = 0; step < iters; step++) {
+        bodyForceKernelNaive<<<grid, block>>>(d_p, d_v, dt, n);
+        integratePositionsKernel<<<grid, block>>>(d_p, d_v, dt, n);
     }
     
-    cudaDeviceSynchronize();
+    // Return
+    cudaMemcpy(h_p, d_p, b_p, cudaMemcpyDeviceToHost);
+    cudaMemcpy(h_v, d_v, b_v, cudaMemcpyDeviceToHost);
 
-    cudaMemcpy(h_p, d_p, bytes_pos, cudaMemcpyDeviceToHost);
-    cudaMemcpy(h_v, d_v, bytes_vel, cudaMemcpyDeviceToHost);
-
+    // Cleanup
     cudaFree(d_p);
     cudaFree(d_v);
 }
 
-
-void runSimulationGPU_Streamed(float4* h_p, float3* h_v, float dt, int nBodies, int nIters) {
-    int bytes_pos = nBodies * sizeof(float4);
-    int bytes_vel = nBodies * sizeof(float3);
+// RunTiled
+void runSimulationGPU_Tiled(float4* h_p, float3* h_v, float dt, int n, int iters) {
+    int b_p = n * sizeof(float4);
+    int b_v = n * sizeof(float3);
 
     float4 *d_p;
     float3 *d_v;
 
-    cudaMalloc(&d_p, bytes_pos);
-    cudaMalloc(&d_v, bytes_vel);
+    // Mem
+    cudaMalloc(&d_p, b_p);
+    cudaMalloc(&d_v, b_v);
+    cudaMemcpy(d_p, h_p, b_p, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_v, h_v, b_v, cudaMemcpyHostToDevice);
 
-    // 1. Initialize the Custom CUDA Stream
-    cudaStream_t compute_stream;
-    cudaStreamCreate(&compute_stream);
+    int block = 256;
+    int grid = (n + block - 1) / block;
+    int sh_mem = block * sizeof(float4);
 
-    // 2. Perform Asynchronous Memory Transfers
-
-    cudaMemcpyAsync(d_p, h_p, bytes_pos, cudaMemcpyHostToDevice, compute_stream);
-    cudaMemcpyAsync(d_v, h_v, bytes_vel, cudaMemcpyHostToDevice, compute_stream);
-
-    int blockSize = 256;
-    int gridSize = (nBodies + blockSize - 1) / blockSize;
-
-    // 3. Launch the kernels directly into our custom stream
- 
-    for (int step = 0; step < nIters; step++) {
-        bodyForceKernelTiled<<<gridSize, blockSize, 0, compute_stream>>>(d_p, d_v, dt, nBodies);
-        integratePositionsKernel<<<gridSize, blockSize, 0, compute_stream>>>(d_p, d_v, dt, nBodies);
+    // Loop
+    for (int step = 0; step < iters; step++) {
+        bodyForceKernelTiled<<<grid, block, sh_mem>>>(d_p, d_v, dt, n);
+        integratePositionsKernel<<<grid, block>>>(d_p, d_v, dt, n);
     }
     
-    // 4. Asynchronously copy the final results back to the Host
-    cudaMemcpyAsync(h_p, d_p, bytes_pos, cudaMemcpyDeviceToHost, compute_stream);
-    cudaMemcpyAsync(h_v, d_v, bytes_vel, cudaMemcpyDeviceToHost, compute_stream);
+    // Return
+    cudaMemcpy(h_p, d_p, b_p, cudaMemcpyDeviceToHost);
+    cudaMemcpy(h_v, d_v, b_v, cudaMemcpyDeviceToHost);
 
-    // 5. Block the CPU *only* at the very end to ensure all stream operations are finished
-    cudaStreamSynchronize(compute_stream);
+    // Cleanup
+    cudaFree(d_p);
+    cudaFree(d_v);
+}
 
-    // 6. Clean up
-    cudaStreamDestroy(compute_stream);
+// RunStream
+void runSimulationGPU_Streamed(float4* h_p, float3* h_v, float dt, int n, int iters) {
+    int b_p = n * sizeof(float4);
+    int b_v = n * sizeof(float3);
+
+    float4 *d_p;
+    float3 *d_v;
+
+    // Mem
+    cudaMalloc(&d_p, b_p);
+    cudaMalloc(&d_v, b_v);
+
+    // Stream
+    cudaStream_t s;
+    cudaStreamCreate(&s);
+
+    // Async
+    cudaMemcpyAsync(d_p, h_p, b_p, cudaMemcpyHostToDevice, s);
+    cudaMemcpyAsync(d_v, h_v, b_v, cudaMemcpyHostToDevice, s);
+
+    int block = 256;
+    int grid = (n + block - 1) / block;
+    int sh_mem = block * sizeof(float4);
+
+    // Loop
+    for (int step = 0; step < iters; step++) {
+        bodyForceKernelTiled<<<grid, block, sh_mem, s>>>(d_p, d_v, dt, n);
+        integratePositionsKernel<<<grid, block, 0, s>>>(d_p, d_v, dt, n);
+    }
+    
+    // Return
+    cudaMemcpyAsync(h_p, d_p, b_p, cudaMemcpyDeviceToHost, s);
+    cudaMemcpyAsync(h_v, d_v, b_v, cudaMemcpyDeviceToHost, s);
+
+    // Sync
+    cudaStreamSynchronize(s);
+
+    // Cleanup
+    cudaStreamDestroy(s);
     cudaFree(d_p);
     cudaFree(d_v);
 }
