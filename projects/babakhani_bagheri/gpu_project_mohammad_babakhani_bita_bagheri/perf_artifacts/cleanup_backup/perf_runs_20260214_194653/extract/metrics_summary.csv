@@ -1,0 +1,1 @@
+scenario,N,steps,dt,eps,blockSize,time_per_step_ms,IPS,nsys_gpu_time_ms,nsys_top_kernel,nsys_top_kernel_ms,nsys_memcpy_ms,ncu_sm_pct,ncu_dram_pct,ncu_branch_eff

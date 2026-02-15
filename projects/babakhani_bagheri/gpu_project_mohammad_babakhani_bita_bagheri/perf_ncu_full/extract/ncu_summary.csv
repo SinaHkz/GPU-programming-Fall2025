@@ -1,0 +1,6 @@
+N,branch_efficiency,dram_throughput,sm_throughput,runtime_duration
+1024,,,,87.33
+2048,,,,171.33
+4096,,,,340.67
+512,,,,44.29
+8192,,,,771.84

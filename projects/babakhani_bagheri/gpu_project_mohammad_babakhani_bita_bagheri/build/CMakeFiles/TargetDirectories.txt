@@ -1,0 +1,3 @@
+/home/bita/Documents/test2/build/CMakeFiles/nbody.dir
+/home/bita/Documents/test2/build/CMakeFiles/edit_cache.dir
+/home/bita/Documents/test2/build/CMakeFiles/rebuild_cache.dir

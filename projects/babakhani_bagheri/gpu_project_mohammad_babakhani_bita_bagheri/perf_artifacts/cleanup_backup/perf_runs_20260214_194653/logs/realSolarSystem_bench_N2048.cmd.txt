@@ -1,0 +1,1 @@
+bash -lc ./build/nbody --realSolarSystem 1 --collisions 0 --render 0 --benchmark 0 --steps 200 --N 2048

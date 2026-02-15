@@ -1,0 +1,2 @@
+==PROF== Imported kernel demangled names from /root/.config/NVIDIA Corporation/ncu-kernel-renames.yaml
+==ERROR== 'ncu_full/csv/profile_N8192.csv' does not exist or is not an executable. Please make sure to specify the absolute path to 'ncu_full/csv/profile_N8192.csv' if the executable is not in the local directory.
