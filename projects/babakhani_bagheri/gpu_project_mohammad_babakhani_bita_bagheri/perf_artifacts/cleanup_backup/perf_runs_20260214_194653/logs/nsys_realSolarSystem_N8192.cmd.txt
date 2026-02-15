@@ -1,0 +1,1 @@
+bash -lc nsys profile --stats=true --force-overwrite=true -o perf_runs_20260214_194653/nsys/realSolarSystem_N8192       ./build/nbody --realSolarSystem 1 --collisions 0 --render 0 --steps 2000 --N 8192
