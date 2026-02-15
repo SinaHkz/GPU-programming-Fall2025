@@ -1,0 +1,16 @@
+nvcc -O3 -std=c++14 -arch=sm_89 -Iinclude ^
+src/main.cu ^
+src/train_op.cu ^
+src/optimize/conv_fuse.cu ^
+src/layers/pool_forward.cu ^
+src/layers/pool_backward.cu ^
+src/layers/fc_forward.cu ^
+src/layers/fc_backward.cu ^
+src/ops/softmax_loss.cu ^
+src/ops/sgd_update.cu ^
+src/optimize/conv_back_tile.cu ^
+src/ops/relu_activate.cu ^
+src/utils/cuda_utils.cu ^
+src/utils/timer.cu ^
+src/mnist_loader.cpp ^
+-o cnn

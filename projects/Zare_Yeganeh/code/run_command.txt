@@ -1,0 +1,74 @@
+cnn.exe --train-images train-images.idx3-ubyte --train-labels train-labels.idx1-ubyte ^
+--test-images t10k-images.idx3-ubyte --test-labels t10k-labels.idx1-ubyte ^
+--epochs 14 --batch 8 --lr 0.0100 --block 256
+
+
+
+Baseline:
+CU_SRCS = [
+    "main.cu",
+    "train.cu",
+    "layers/conv_forward.cu",
+    "layers/pool_forward.cu",
+    "layers/pool_backward.cu",
+    "layers/fc_forward.cu",
+    "layers/fc_backward.cu",
+    "ops/softmax_loss.cu",
+    "ops/sgd_update.cu",
+    "layers/conv_backward.cu",
+    "ops/relu_activate.cu",
+    "utils/cuda_utils.cu",
+    "utils/timer.cu",
+]
+
+Tiling:
+CU_SRCS = [
+    "main.cu",
+    "train.cu",
+    "optimization/conv_tile.cu",
+    "layers/pool_forward.cu",
+    "layers/pool_backward.cu",
+    "layers/fc_forward.cu",
+    "layers/fc_backward.cu",
+    "ops/softmax_loss.cu",
+    "ops/sgd_update.cu",
+    "layers/conv_backward.cu ",
+    "ops/relu_activate.cu",
+    "utils/cuda_utils.cu",
+    "utils/timer.cu",
+]
+
+Fusion:
+CU_SRCS = [
+    "main.cu",
+    "train_fues.cu",
+    "/optimize/conv_fuse.cu",
+    "layers/pool_forward.cu",
+    "layers/pool_backward.cu",
+    "layers/fc_forward.cu",
+    "layers/fc_backward.cu",
+    "ops/softmax_loss.cu",
+    "ops/sgd_update.cu",
+    "layers/conv_backward.cu",
+    "ops/relu_activate.cu",
+    "utils/cuda_utils.cu",
+    "utils/timer.cu",
+]
+
+
+Reduction:
+CU_SRCS = [
+    "main.cu",
+    "train_op.cu",
+    "optimize/conv_fuse.cu",
+    "layers/pool_forward.cu",
+    "layers/pool_backward.cu",
+    "layers/fc_forward.cu",
+    "layers/fc_backward.cu",
+    "ops/softmax_loss.cu",
+    "ops/sgd_update.cu",
+    "optimize/conv_back_tile.cu",
+    "ops/relu_activate.cu",
+    "utils/cuda_utils.cu",
+    "utils/timer.cu",
+]
