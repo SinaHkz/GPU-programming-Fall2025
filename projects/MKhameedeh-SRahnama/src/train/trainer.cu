@@ -661,7 +661,7 @@ TrainSummary Trainer::run() {
     Logger::instance().info("Epoch " + std::to_string(epoch) + " done: " + std::to_string(samples / epoch_s) +
                             " samples/s");
 
-    if (!stop_training) {
+    if (!stop_training && cfg_.eval_every > 0) {
       if (cfg_.enable_async_eval && async_evaluator) {
         request_checkpoint(global_step);
         async_evaluator->request(epoch, global_step);

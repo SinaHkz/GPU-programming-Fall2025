@@ -69,6 +69,11 @@ int main(int argc, char** argv) {
       const int bench_steps = (cfg.max_steps > 0) ? cfg.max_steps : ((cfg.benchmark_steps > 0) ? cfg.benchmark_steps : 200);
       before.max_steps = bench_steps;
       after.max_steps = bench_steps;
+      // Benchmark should measure core training-step performance, not eval/checkpoint side work.
+      before.eval_every = 0;
+      after.eval_every = 0;
+      before.save_every = 0;
+      after.save_every = 0;
 
       before.enable_h2d_pipeline = false;
       before.enable_log_sync_optimizations = false;
@@ -82,7 +87,8 @@ int main(int argc, char** argv) {
       after.enable_async_checkpoint = true;
       // Keep benchmark robust across environments: force graph capture off.
       after.enable_cuda_graph_sgd = false;
-      after.enable_async_eval = true;
+      // Async eval competes for the same GPU and can make step-time benchmark look slower.
+      after.enable_async_eval = false;
       if (after.norm_log_multiplier < 1) after.norm_log_multiplier = 1;
 
       before.run_name = with_suffix(cfg.run_name, "before");
