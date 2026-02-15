@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="SELECTIVE" />
+  </component>
+  <component name="CMakeProjectFlavorService">
+    <option name="flavorId" value="CMakePlainProjectFlavor" />
+  </component>
+  <component name="CMakeSettings">
+    <configurations>
+      <configuration PROFILE_NAME="Debug" ENABLED="true" CONFIG_NAME="Debug" />
+    </configurations>
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="ac71335a-d76c-4b5a-b68f-b9d47e027211" name="Changes" comment="">
+      <change afterPath="$PROJECT_DIR$/CMakeLists.txt" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/Makefile" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/include/conv_backward.h" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/include/conv_fused.h" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/include/conv_tile.h" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/optimize/conv_back_tile.cu" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/optimize/conv_fuse.cu" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/train_op.cu" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/t10k-images.idx3-ubyte" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/t10k-labels.idx1-ubyte" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/train-images.idx3-ubyte" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/train-labels.idx1-ubyte" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.vscode/c_cpp_properties.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/include/activations.h" beforeDir="false" afterPath="$PROJECT_DIR$/include/activations.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/include/conv_layer.h" beforeDir="false" afterPath="$PROJECT_DIR$/include/conv_layer.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/include/fc_layer.h" beforeDir="false" afterPath="$PROJECT_DIR$/include/fc_layer.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/include/loss.h" beforeDir="false" afterPath="$PROJECT_DIR$/include/loss.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/include/optimizer.h" beforeDir="false" afterPath="$PROJECT_DIR$/include/optimizer.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/include/pool_layer.h" beforeDir="false" afterPath="$PROJECT_DIR$/include/pool_layer.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/include/tensor.h" beforeDir="false" afterPath="$PROJECT_DIR$/include/tensor.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/include/timer.h" beforeDir="false" afterPath="$PROJECT_DIR$/include/timer.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/include/utils.h" beforeDir="false" afterPath="$PROJECT_DIR$/include/utils.h" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/layers/conv_backward.cu" beforeDir="false" afterPath="$PROJECT_DIR$/src/layers/conv_backward.cu" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/layers/conv_forward.cu" beforeDir="false" afterPath="$PROJECT_DIR$/src/layers/conv_forward.cu" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/layers/fc_backward.cu" beforeDir="false" afterPath="$PROJECT_DIR$/src/layers/fc_backward.cu" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/layers/fc_forward.cu" beforeDir="false" afterPath="$PROJECT_DIR$/src/layers/fc_forward.cu" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/layers/pool_backward.cu" beforeDir="false" afterPath="$PROJECT_DIR$/src/layers/pool_backward.cu" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/layers/pool_forward.cu" beforeDir="false" afterPath="$PROJECT_DIR$/src/layers/pool_forward.cu" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/ops/relu_activate.cu" beforeDir="false" afterPath="$PROJECT_DIR$/src/ops/relu_activate.cu" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/ops/sgd_update.cu" beforeDir="false" afterPath="$PROJECT_DIR$/src/ops/sgd_update.cu" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/ops/softmax_loss.cu" beforeDir="false" afterPath="$PROJECT_DIR$/src/ops/softmax_loss.cu" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/utils/cuda_utils.cu" beforeDir="false" afterPath="$PROJECT_DIR$/src/utils/cuda_utils.cu" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/utils/timer.cu" beforeDir="false" afterPath="$PROJECT_DIR$/src/utils/timer.cu" afterDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="ClangdSettings">
+    <option name="formatViaClangd" value="false" />
+  </component>
+  <component name="FileTemplateManagerImpl">
+    <option name="RECENT_TEMPLATES">
+      <list>
+        <option value="CMakeLists.txt" />
+      </list>
+    </option>
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="ProjectColorInfo">{
+  &quot;associatedIndex&quot;: 2
+}</component>
+  <component name="ProjectId" id="37yYUsfcszzLuOfyQV5q30fekh0" />
+  <component name="ProjectStatusUIService">{
+  &quot;uiKindId&quot;: &quot;Widget&quot;
+}</component>
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;Makefile Target.all.executor&quot;: &quot;Run&quot;,
+    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.cidr.known.project.marker&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.readMode.enableVisualFormatting&quot;: &quot;true&quot;,
+    &quot;cf.first.check.clang-format&quot;: &quot;false&quot;,
+    &quot;cidr.known.project.marker&quot;: &quot;true&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;eighty-percent&quot;,
+    &quot;last_opened_file_path&quot;: &quot;/home/shiva/CNN/Project/src&quot;,
+    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
+    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
+    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
+    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
+    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
+    &quot;structure.view.defaults.are.configured&quot;: &quot;true&quot;,
+    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
+  }
+}</component>
+  <component name="RecentsManager">
+    <key name="CopyFile.RECENT_KEYS">
+      <recent name="$PROJECT_DIR$/src" />
+      <recent name="$PROJECT_DIR$/include" />
+    </key>
+    <key name="MoveFile.RECENT_KEYS">
+      <recent name="$PROJECT_DIR$/src/optimize" />
+      <recent name="$PROJECT_DIR$" />
+    </key>
+  </component>
+  <component name="RunManager">
+    <configuration name="all" type="MAKEFILE_TARGET_RUN_CONFIGURATION" factoryName="Makefile">
+      <makefile filename="$PROJECT_DIR$/Makefile" target="all" workingDirectory="" arguments="">
+        <envs />
+      </makefile>
+      <method v="2" />
+    </configuration>
+  </component>
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="ac71335a-d76c-4b5a-b68f-b9d47e027211" name="Changes" comment="" />
+      <created>1767876798477</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1767876798477</updated>
+      <workItem from="1767876799872" duration="4831000" />
+      <workItem from="1768115562349" duration="174000" />
+      <workItem from="1768146110946" duration="7391000" />
+      <workItem from="1768759810177" duration="1790000" />
+      <workItem from="1768850248804" duration="2288000" />
+      <workItem from="1768892287232" duration="5799000" />
+      <workItem from="1768910733401" duration="365000" />
+      <workItem from="1769168691411" duration="1533000" />
+      <workItem from="1769186168286" duration="1581000" />
+      <workItem from="1769342643011" duration="3526000" />
+      <workItem from="1769362180836" duration="3423000" />
+      <workItem from="1769416312680" duration="4821000" />
+      <workItem from="1769940914371" duration="1501000" />
+      <workItem from="1769942615614" duration="46000" />
+    </task>
+    <servers />
+  </component>
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="3" />
+  </component>
+</project>
